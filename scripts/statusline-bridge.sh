@@ -45,14 +45,14 @@ else
   #   .rate_limits.five_hour.resets_at         unix seconds (integer)
   #   .rate_limits.seven_day.used_percentage   number 0-100
   #   .rate_limits.seven_day.resets_at         unix seconds (integer)
-  RATE_LIMITS="$(echo "${INPUT}" | jq -c '.rate_limits // empty' 2>/dev/null || true)"
+  RATE_LIMITS="$(printf '%s' "${INPUT}" | jq -c '.rate_limits // empty' 2>/dev/null || true)"
 
   if [[ -n "${RATE_LIMITS}" && "${RATE_LIMITS}" != "null" ]]; then
     # Build the state object. Use // null so missing fields become explicit nulls
     # rather than absent keys — the Swift side expects a consistent shape.
     NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-    NEW_STATE="$(echo "${RATE_LIMITS}" | jq \
+    NEW_STATE="$(printf '%s' "${RATE_LIMITS}" | jq \
       --arg now "${NOW_ISO}" \
       '{
         session: (
@@ -77,7 +77,7 @@ else
 
     if [[ -n "${NEW_STATE}" ]]; then
       # Atomic write: temp file + rename. Avoids partial reads from the Swift app.
-      echo "${NEW_STATE}" > "${STATE_TMP}" && mv -f "${STATE_TMP}" "${STATE_FILE}"
+      printf '%s\n' "${NEW_STATE}" > "${STATE_TMP}" && mv -f "${STATE_TMP}" "${STATE_FILE}"
     else
       echo "[$(date -u +%FT%TZ)] jq transform failed; raw rate_limits=${RATE_LIMITS}" >> "${LOG_FILE}"
     fi
@@ -91,10 +91,10 @@ fi
 # Chain to the user's inner statusline if configured. Otherwise emit a minimal
 # default so the user's terminal status bar isn't blank.
 if [[ -n "${CCU_INNER_STATUSLINE:-}" && -x "${CCU_INNER_STATUSLINE}" ]]; then
-  echo "${INPUT}" | "${CCU_INNER_STATUSLINE}"
+  printf '%s\n' "${INPUT}" | "${CCU_INNER_STATUSLINE}"
 else
   # Minimal default: model name + context % if available, else nothing.
-  echo "${INPUT}" | jq -r '
+  printf '%s' "${INPUT}" | jq -r '
     [
       (.model.display_name // empty),
       (if .context_window.used_percentage != null

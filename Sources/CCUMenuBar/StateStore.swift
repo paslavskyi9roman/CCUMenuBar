@@ -38,7 +38,10 @@ final class StateStore: ObservableObject {
         if fromWatcher, let fp = lastWrittenFingerprint, fp == next.fingerprint() {
             return
         }
-        if let current = state, current.updatedAt > next.updatedAt {
+        if let current = state,
+           let curDate = State.iso8601.date(from: current.updatedAt),
+           let nextDate = State.iso8601.date(from: next.updatedAt),
+           curDate > nextDate {
             return
         }
         state = next

@@ -64,6 +64,7 @@ final class OAuthPoller {
             throw PollError.noCredentials
         }
         var req = URLRequest(url: Self.usageURL)
+        req.timeoutInterval = 15
         req.httpMethod = "GET"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
@@ -81,7 +82,8 @@ final class OAuthPoller {
             throw PollError.transport("http \(http.statusCode)")
         }
         guard let parsed = parseUsage(data: data) else {
-            Log.warn("oauth usage parse miss; raw=\(String(data: data, encoding: .utf8) ?? "<binary>")")
+            let preview = (String(data: data, encoding: .utf8) ?? "<binary>").prefix(512)
+            Log.warn("oauth usage parse miss; raw[\(data.count)B, first 512]=\(preview)")
             throw PollError.parse
         }
         let newState = State(

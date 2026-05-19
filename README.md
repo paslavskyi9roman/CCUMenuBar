@@ -41,7 +41,7 @@ Quit
 
 ```bash
 git clone <this repo>
-cd ccu-menubar
+cd usuage-notch
 swift build -c release
 ./scripts/make-app.sh
 ```
