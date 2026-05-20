@@ -28,6 +28,9 @@ enum Log {
         write("boot")
     }
 
+    /// The active log file, for surfacing in Finder.
+    static var fileURL: URL { logFile }
+
     static func warn(_ message: String) {
         osLogger.warning("\(message, privacy: .public)")
         write("warn " + message)

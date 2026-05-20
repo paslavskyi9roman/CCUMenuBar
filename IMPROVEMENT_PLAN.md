@@ -12,7 +12,7 @@ work.
 | 2 | In-app onboarding / setup flow | **Shipped** |
 | 3 | Notarized release + Homebrew cask | Planned |
 | 4 | Visual urgency in the menu bar title | **Shipped** |
-| 5 | Actionable menu + Preferences window | Planned |
+| 5 | Actionable menu + Preferences window | **Shipped** |
 
 ---
 
@@ -87,7 +87,12 @@ request auth).
 
 ---
 
-## #5 — Actionable menu + Preferences window
+## #5 — Actionable menu + Preferences window — Shipped
+
+Shipped with **Refresh now** and **Reveal logs in Finder** menu actions and a
+SwiftUI **Preferences** window (notification toggles + warn/critical
+thresholds, bound to `Settings`). The "Open usage page" item was dropped — no
+reliable usage URL. The notes below are kept for reference.
 
 **Goal:** the dropdown should *do* things, not just display.
 
@@ -116,6 +121,6 @@ request auth).
 
 1. ~~`Settings.swift`~~ — done
 2. ~~**#1** — Threshold notifications~~ — done
-3. **#5** — Actionable menu + Preferences
+3. ~~**#5** — Actionable menu + Preferences~~ — done
 4. **#3** — Notarized release + Homebrew cask (blocked on the Apple Developer
    account)
