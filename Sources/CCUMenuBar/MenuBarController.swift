@@ -12,6 +12,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.store = store
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
+        // Persist the item's menu-bar position across launches, so a manual
+        // placement (e.g. dragged out from behind the notch) sticks.
+        statusItem.autosaveName = "ccu-menubar-status-item"
         statusItem.button?.title = renderTitle()
         statusItem.menu = menu
         menu.delegate = self
@@ -33,7 +36,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func renderTitle() -> String {
         let s = store.state?.session?.usedPct
         let w = store.state?.weekly?.usedPct
-        let body = "S \(format(s)) │ W \(format(w))"
+        // Compact form (`S42% │ W67%`) — a narrow status item is far less likely
+        // to be swallowed by the notch on a crowded menu bar.
+        let body = "S\(format(s)) │ W\(format(w))"
         switch store.producerStatus {
         case .ok where !(store.state?.isStale ?? true):
             return body
@@ -44,7 +49,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .offline:
             return "⚠ " + body
         case .neverSeen:
-            return "S --% │ W --%"
+            return "S--% │ W--%"
         }
     }
 
