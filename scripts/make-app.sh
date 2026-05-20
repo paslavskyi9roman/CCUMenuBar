@@ -7,6 +7,7 @@
 set -euo pipefail
 
 BIN_PATH=".build/release/CCUMenuBar"
+RES_BUNDLE=".build/release/CCUMenuBar_CCUMenuBar.bundle"
 APP_PATH="CCUMenuBar.app"
 BUNDLE_ID="com.ccu.menubar"
 APP_NAME="Claude Code Usage"
@@ -24,6 +25,14 @@ mkdir -p "${APP_PATH}/Contents/Resources"
 
 cp "${BIN_PATH}" "${APP_PATH}/Contents/MacOS/${EXE_NAME}"
 chmod +x "${APP_PATH}/Contents/MacOS/${EXE_NAME}"
+
+# Copy the SwiftPM resource bundle (bundled statusline script) so Bundle.module
+# resolves at runtime — the in-app Setup flow installs the script from it.
+if [[ ! -d "${RES_BUNDLE}" ]]; then
+  echo "error: ${RES_BUNDLE} not found. Run \`swift build -c release\` first." >&2
+  exit 1
+fi
+cp -R "${RES_BUNDLE}" "${APP_PATH}/Contents/Resources/"
 
 cat > "${APP_PATH}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

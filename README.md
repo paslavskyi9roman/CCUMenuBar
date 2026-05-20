@@ -41,7 +41,7 @@ Quit
 
 ```bash
 git clone <this repo>
-cd usuage-notch
+cd CCUMenuBar
 swift build -c release
 ./scripts/make-app.sh
 ```
@@ -63,13 +63,31 @@ Quit from the dropdown before continuing.
 > First-launch Gatekeeper note: the binary is ad-hoc signed, not Developer
 > ID signed. If macOS quarantines it, right-click → Open the first time.
 
-### 2. Install the statusline bridge (Producer A)
+### 2. Connect to Claude Code (Producer A)
 
-This is what feeds usage data to the app while Claude Code is running.
+The statusline bridge feeds usage data to the app while Claude Code is running.
+The app installs it for you — no manual file copying.
+
+On first launch the **Setup** window opens automatically. You can also reopen it
+any time from the menu bar dropdown → **Setup…**. It has two buttons:
+
+1. **Install** — copies the bridge script to `~/.claude/scripts`.
+2. **Configure** — adds the `statusLine` command to `~/.claude/settings.json`.
+
+Then restart Claude Code and run a command that hits the API. The Setup window's
+third step turns green once data is flowing.
+
+**Already have a statusline?** Setup preserves it. Your previous `statusLine`
+command is saved to `~/.claude/scripts/ccu-inner-statusline`, and the bridge
+chains to it — your existing HUD keeps working.
+
+<details>
+<summary>Manual install (if you'd rather not use the Setup window)</summary>
 
 ```bash
 mkdir -p ~/.claude/scripts
-cp scripts/statusline-bridge.sh ~/.claude/scripts/ccu-statusline-bridge.sh
+cp Sources/CCUMenuBar/Resources/ccu-statusline-bridge.sh \
+   ~/.claude/scripts/ccu-statusline-bridge.sh
 chmod +x ~/.claude/scripts/ccu-statusline-bridge.sh
 ```
 
@@ -84,14 +102,10 @@ Add to `~/.claude/settings.json` (merge with existing settings):
 }
 ```
 
-**Already have a statusline?** Don't replace it — chain it. Add to your
-`~/.zshrc` or `~/.bash_profile`:
-
-```bash
-export CCU_INNER_STATUSLINE="$HOME/.claude/scripts/your-existing-statusline.sh"
-```
-
-The bridge will forward stdin to your script and emit its output.
+To chain an existing statusline, either set `CCU_INNER_STATUSLINE` to its
+command in your shell profile, or write that command to
+`~/.claude/scripts/ccu-inner-statusline`.
+</details>
 
 ### 3. Verify
 
@@ -202,8 +216,10 @@ minutes and retries.
 ```bash
 # 1. Quit the app from the menu bar dropdown.
 # 2. Remove the statusline bridge:
-rm ~/.claude/scripts/ccu-statusline-bridge.sh
-# Edit ~/.claude/settings.json to remove the "statusLine" key.
+rm -f ~/.claude/scripts/ccu-statusline-bridge.sh
+rm -f ~/.claude/scripts/ccu-inner-statusline
+# Edit ~/.claude/settings.json to remove the "statusLine" key (or restore
+# ~/.claude/settings.json.ccu-backup, the copy saved before Setup ran).
 
 # 3. Remove app state and logs:
 rm -rf "$HOME/Library/Application Support/ClaudeCodeUsage"
