@@ -12,6 +12,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Invoked when the user picks "Setup…". Wired up by `AppDelegate`.
     var onOpenSetup: (() -> Void)?
 
+    /// Invoked when the user picks "Refresh now".
+    var onRefresh: (() -> Void)?
+
+    /// Invoked when the user picks "Preferences…".
+    var onOpenPreferences: (() -> Void)?
+
     // Monospaced digits so the title doesn't jitter as percentages change width.
     private static let titleFont: NSFont = {
         let size = NSFont.menuBarFont(ofSize: 0).pointSize
@@ -26,20 +32,27 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Persist the item's menu-bar position across launches, so a manual
         // placement (e.g. dragged out from behind the notch) sticks.
         statusItem.autosaveName = "ccu-menubar-status-item"
-        statusItem.button?.attributedTitle = renderTitle()
         statusItem.menu = menu
         menu.delegate = self
         bind()
+        updateTitle()
     }
 
     private func bind() {
+        // Re-render the title when usage changes, and when the thresholds
+        // change in Preferences — so the color updates without a poll.
         store.objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in
-                guard let self else { return }
-                self.statusItem.button?.attributedTitle = self.renderTitle()
-            }
+            .sink { [weak self] in self?.updateTitle() }
             .store(in: &cancellables)
+        settings.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.updateTitle() }
+            .store(in: &cancellables)
+    }
+
+    private func updateTitle() {
+        statusItem.button?.attributedTitle = renderTitle()
     }
 
     // MARK: - Title
@@ -106,12 +119,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(statusRow())
         menu.addItem(.separator())
-        menu.addItem(setupItem())
+        menu.addItem(actionItem(title: "Refresh now", selector: #selector(refreshNow)))
+        menu.addItem(actionItem(title: "Reveal logs in Finder", selector: #selector(revealLogs)))
+        menu.addItem(.separator())
+        menu.addItem(actionItem(title: "Setup…", selector: #selector(openSetup)))
+        menu.addItem(actionItem(title: "Preferences…", selector: #selector(openPreferences),
+                                keyEquivalent: ","))
         menu.addItem(launchAtLoginItem())
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
+        menu.addItem(actionItem(title: "Quit", selector: #selector(quit), keyEquivalent: "q"))
+    }
+
+    private func actionItem(title: String, selector: Selector, keyEquivalent: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: selector, keyEquivalent: keyEquivalent)
+        item.target = self
+        return item
     }
 
     private func rowFor(label: String, bucket: Bucket?) -> NSMenuItem {
@@ -148,14 +170,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return item
     }
 
-    private func setupItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Setup…", action: #selector(openSetup), keyEquivalent: "")
-        item.target = self
-        return item
-    }
-
     @objc private func openSetup() {
         onOpenSetup?()
+    }
+
+    @objc private func openPreferences() {
+        onOpenPreferences?()
+    }
+
+    @objc private func refreshNow() {
+        onRefresh?()
+    }
+
+    @objc private func revealLogs() {
+        NSWorkspace.shared.activateFileViewerSelecting([Log.fileURL])
     }
 
     private func launchAtLoginItem() -> NSMenuItem {

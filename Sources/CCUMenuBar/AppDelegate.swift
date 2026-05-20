@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var poller: OAuthPoller!
     private var menuBar: MenuBarController!
     private var setupWindow: SetupWindowController!
+    private var preferencesWindow: PreferencesWindowController!
     private var notifications: NotificationManager!
     private var signalSources: [DispatchSourceSignal] = []
 
@@ -25,9 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watcher = StateFileWatcher(store: store)
         poller = OAuthPoller(store: store)
         setupWindow = SetupWindowController(store: store)
+        preferencesWindow = PreferencesWindowController(settings: settings)
         notifications = NotificationManager(store: store, settings: settings)
 
         menuBar.onOpenSetup = { [weak self] in self?.setupWindow.show() }
+        menuBar.onOpenPreferences = { [weak self] in self?.preferencesWindow.show() }
+        menuBar.onRefresh = { [weak self] in self?.poller.refreshNow() }
 
         watcher.start()
         poller.start()
