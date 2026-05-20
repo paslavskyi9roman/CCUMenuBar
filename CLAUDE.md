@@ -26,6 +26,15 @@ After any change touching `LaunchAtLogin`, test against a freshly built `.app`, 
 
 VS Code: `.vscode/launch.json` has "Debug CCUMenuBar" / "Release CCUMenuBar" configs (Swift extension).
 
+## Git conventions
+
+- Commit messages and PR titles/descriptions must **not** mention Claude, AI
+  assistance, or include `claude.ai` links, "Generated with" notes, or
+  `Co-Authored-By` trailers. Write them as a human author would.
+- Author *and* commit as the repository user
+  (`Roman Paslavskyi <46484914+paslavskyi9roman@users.noreply.github.com>`),
+  never as `Claude`.
+
 ## Architecture
 
 This is a **two-producer / one-consumer system** built around a single shared JSON file:
@@ -34,10 +43,11 @@ This is a **two-producer / one-consumer system** built around a single shared JS
 ~/Library/Application Support/ClaudeCodeUsage/state.json
 ```
 
-**Producer A — `scripts/statusline-bridge.sh`** runs *outside this app*, as a Claude Code
-statusline command. It extracts `.rate_limits` from the session JSON Claude Code pipes to it,
-transforms it with `jq`, and atomic-writes `state.json`. Installed by the user to
-`~/.claude/scripts/`. Only updates while Claude Code is running.
+**Producer A — `Sources/CCUMenuBar/Resources/ccu-statusline-bridge.sh`** runs *outside this
+app*, as a Claude Code statusline command. It extracts `.rate_limits` from the session JSON
+Claude Code pipes to it, transforms it with `jq`, and atomic-writes `state.json`. It ships as a
+SwiftPM bundle resource; the in-app Setup flow (`BridgeInstaller` / `SetupWindow`) installs it to
+`~/.claude/scripts/` and wires up `settings.json`. Only updates while Claude Code is running.
 
 **Producer B — `OAuthPoller.swift`** runs *inside this app*. Every 60s it reads the OAuth token
 from `~/.claude/.credentials.json` and GETs the **undocumented** `https://api.anthropic.com/api/oauth/usage`
@@ -48,7 +58,7 @@ endpoint, then writes `state.json`. Covers the gap when Claude Code is closed.
 ### Critical invariant: the shared JSON shape
 
 `StateModel.swift` (`State` / `Bucket`, snake_case `CodingKeys`) defines the on-disk schema.
-**The `jq` output in `statusline-bridge.sh` and the Swift `Codable` types must stay byte-compatible.**
+**The `jq` output in `ccu-statusline-bridge.sh` and the Swift `Codable` types must stay byte-compatible.**
 Changing one without the other silently breaks Producer A. Both writers (the bash script and
 `StateStore.atomicWrite`) use the same atomic pattern: write a temp file, then `rename(2)` it
 over the destination.

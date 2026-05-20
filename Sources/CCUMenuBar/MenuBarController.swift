@@ -1,12 +1,27 @@
 import AppKit
 import Combine
 
+/// Usage percentages at or above these levels are color-coded in the title.
+private enum UsageLevel {
+    static let warn: Double = 80
+    static let critical: Double = 95
+}
+
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let store: StateStore
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private var cancellables: Set<AnyCancellable> = []
+
+    /// Invoked when the user picks "Setup…". Wired up by `AppDelegate`.
+    var onOpenSetup: (() -> Void)?
+
+    // Monospaced digits so the title doesn't jitter as percentages change width.
+    private static let titleFont: NSFont = {
+        let size = NSFont.menuBarFont(ofSize: 0).pointSize
+        return NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
+    }()
 
     init(store: StateStore) {
         self.store = store
@@ -15,7 +30,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Persist the item's menu-bar position across launches, so a manual
         // placement (e.g. dragged out from behind the notch) sticks.
         statusItem.autosaveName = "ccu-menubar-status-item"
-        statusItem.button?.title = renderTitle()
+        statusItem.button?.attributedTitle = renderTitle()
         statusItem.menu = menu
         menu.delegate = self
         bind()
@@ -26,36 +41,63 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 guard let self else { return }
-                self.statusItem.button?.title = self.renderTitle()
+                self.statusItem.button?.attributedTitle = self.renderTitle()
             }
             .store(in: &cancellables)
     }
 
     // MARK: - Title
 
-    private func renderTitle() -> String {
-        let s = store.state?.session?.usedPct
-        let w = store.state?.weekly?.usedPct
-        // Compact form (`S42% │ W67%`) — a narrow status item is far less likely
-        // to be swallowed by the notch on a crowded menu bar.
-        let body = "S\(format(s)) │ W\(format(w))"
+    // Compact form (`S42% │ W67%`) — a narrow status item is far less likely to
+    // be swallowed by the notch on a crowded menu bar. Each percentage is tinted
+    // by how close it is to the limit so it reads at a glance without a click.
+    private func renderTitle() -> NSAttributedString {
+        let session = store.state?.session?.usedPct
+        let weekly = store.state?.weekly?.usedPct
         switch store.producerStatus {
-        case .ok where !(store.state?.isStale ?? true):
-            return body
-        case .ok:
-            return "⚠ " + body
-        case .authStale:
-            return "⚠ " + body
-        case .offline:
-            return "⚠ " + body
         case .neverSeen:
-            return "S--% │ W--%"
+            return composeTitle(warn: false, session: nil, weekly: nil, dimmed: true)
+        case .ok:
+            return composeTitle(warn: store.state?.isStale ?? true,
+                                session: session, weekly: weekly, dimmed: false)
+        case .authStale, .offline:
+            return composeTitle(warn: true, session: session, weekly: weekly, dimmed: false)
         }
     }
 
-    private func format(_ pct: Double?) -> String {
+    private func composeTitle(warn: Bool, session: Double?, weekly: Double?, dimmed: Bool) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let structural: NSColor = dimmed ? .secondaryLabelColor : .labelColor
+        if warn {
+            result.append(segment("⚠ ", color: .systemOrange))
+        }
+        result.append(segment("S", color: structural))
+        result.append(segment(percentText(session),
+                               color: dimmed ? .secondaryLabelColor : color(forPct: session)))
+        result.append(segment(" │ ", color: structural))
+        result.append(segment("W", color: structural))
+        result.append(segment(percentText(weekly),
+                               color: dimmed ? .secondaryLabelColor : color(forPct: weekly)))
+        return result
+    }
+
+    private func segment(_ text: String, color: NSColor) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .foregroundColor: color,
+            .font: Self.titleFont,
+        ])
+    }
+
+    private func percentText(_ pct: Double?) -> String {
         guard let pct else { return "--%" }
         return "\(Int(pct.rounded()))%"
+    }
+
+    private func color(forPct pct: Double?) -> NSColor {
+        guard let pct else { return .labelColor }
+        if pct >= UsageLevel.critical { return .systemRed }
+        if pct >= UsageLevel.warn { return .systemOrange }
+        return .labelColor
     }
 
     // MARK: - Menu
@@ -68,6 +110,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(statusRow())
         menu.addItem(.separator())
+        menu.addItem(setupItem())
         menu.addItem(launchAtLoginItem())
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
@@ -107,6 +150,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
         return item
+    }
+
+    private func setupItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Setup…", action: #selector(openSetup), keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func openSetup() {
+        onOpenSetup?()
     }
 
     private func launchAtLoginItem() -> NSMenuItem {

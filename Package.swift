@@ -7,7 +7,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "CCUMenuBar",
-            path: "Sources/CCUMenuBar"
+            path: "Sources/CCUMenuBar",
+            resources: [
+                .copy("Resources/ccu-statusline-bridge.sh")
+            ]
         )
     ]
 )

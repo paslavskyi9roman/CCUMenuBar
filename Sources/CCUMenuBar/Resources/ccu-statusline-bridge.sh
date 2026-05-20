@@ -6,7 +6,8 @@
 # stdin to the user's existing statusline (if configured) so we don't break
 # their HUD.
 #
-# Install:
+# Install: open the Claude Code Usage app and use the "Setup…" menu item — it
+# installs this script and configures settings.json for you. To do it by hand:
 #   1. Copy this file to ~/.claude/scripts/ccu-statusline-bridge.sh
 #   2. chmod +x ~/.claude/scripts/ccu-statusline-bridge.sh
 #   3. In ~/.claude/settings.json:
@@ -14,9 +15,13 @@
 #          "type": "command",
 #          "command": "bash ~/.claude/scripts/ccu-statusline-bridge.sh"
 #        }
-#   4. (Optional) If you already have a statusline script, set:
-#        export CCU_INNER_STATUSLINE="/full/path/to/your/script.sh"
-#      in your shell profile, and we'll chain to it.
+#
+# Chaining an existing statusline: if you already have one, this bridge forwards
+# stdin to it so your HUD keeps working. The inner command is resolved from, in
+# order of precedence:
+#   1. $CCU_INNER_STATUSLINE  (a command string, set in your shell profile)
+#   2. ~/.claude/scripts/ccu-inner-statusline  (a one-line file; the Setup flow
+#      writes your previous statusLine command here automatically)
 #
 # Requires: jq. Install with `brew install jq` if missing.
 
@@ -90,8 +95,16 @@ fi
 
 # Chain to the user's inner statusline if configured. Otherwise emit a minimal
 # default so the user's terminal status bar isn't blank.
-if [[ -n "${CCU_INNER_STATUSLINE:-}" && -x "${CCU_INNER_STATUSLINE}" ]]; then
-  printf '%s\n' "${INPUT}" | "${CCU_INNER_STATUSLINE}"
+INNER_CMD="${CCU_INNER_STATUSLINE:-}"
+INNER_SIDECAR="${HOME}/.claude/scripts/ccu-inner-statusline"
+if [[ -z "${INNER_CMD}" && -f "${INNER_SIDECAR}" ]]; then
+  # First non-empty, non-comment line of the sidecar file.
+  INNER_CMD="$(grep -v -e '^[[:space:]]*$' -e '^[[:space:]]*#' "${INNER_SIDECAR}" 2>/dev/null | head -n 1)"
+fi
+
+if [[ -n "${INNER_CMD}" ]]; then
+  # Run via `sh -c` so both bare paths and full commands ("bash /path foo") work.
+  printf '%s\n' "${INPUT}" | sh -c "${INNER_CMD}"
 else
   # Minimal default: model name + context % if available, else nothing.
   printf '%s' "${INPUT}" | jq -r '

@@ -7,7 +7,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var watcher: StateFileWatcher!
     private var poller: OAuthPoller!
     private var menuBar: MenuBarController!
+    private var setupWindow: SetupWindowController!
     private var signalSources: [DispatchSourceSignal] = []
+
+    private static let didShowSetupKey = "ccu.didShowSetup"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -18,11 +21,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar = MenuBarController(store: store)
         watcher = StateFileWatcher(store: store)
         poller = OAuthPoller(store: store)
+        setupWindow = SetupWindowController(store: store)
+
+        menuBar.onOpenSetup = { [weak self] in self?.setupWindow.show() }
 
         watcher.start()
         poller.start()
 
         installSignalHandlers()
+        showSetupOnFirstRun()
+    }
+
+    /// On the first launch where the statusline bridge isn't installed yet,
+    /// open Setup once. Producer B still works without it, so we don't nag.
+    private func showSetupOnFirstRun() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.didShowSetupKey) else { return }
+        defaults.set(true, forKey: Self.didShowSetupKey)
+        if !BridgeInstaller.isScriptInstalled {
+            setupWindow.show()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
