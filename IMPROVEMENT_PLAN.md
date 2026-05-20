@@ -8,7 +8,7 @@ work.
 
 | # | Item | State |
 |---|------|-------|
-| 1 | Threshold notifications | Planned |
+| 1 | Threshold notifications | **Shipped** |
 | 2 | In-app onboarding / setup flow | **Shipped** |
 | 3 | Notarized release + Homebrew cask | Planned |
 | 4 | Visual urgency in the menu bar title | **Shipped** |
@@ -16,24 +16,21 @@ work.
 
 ---
 
-## Prerequisite — `Settings.swift` (shared foundation)
+## Prerequisite — `Settings.swift` (shared foundation) — Shipped
 
-Items #1 and #5 read the same tunables. Build this first to avoid divergent
-copies.
-
-- New `Settings.swift`: a `@MainActor` `ObservableObject`-style type backed by
-  `UserDefaults`, with a Combine publisher so `MenuBarController` and
-  `NotificationManager` react to changes.
-- Keys: `warnThreshold` (default 80), `criticalThreshold` (default 95),
-  `titleStyle` (`.compact` / `.dotPlusWorst` / `.percentOnly`),
-  `notificationsEnabled`, `notifySound`, `pollIntervalSeconds`.
-- Wired in `AppDelegate` and passed to the controllers.
-- Note: #4 currently hardcodes thresholds in the `UsageLevel` enum
-  (`MenuBarController.swift`). Once `Settings` lands, point #4 at it instead.
+`Settings.swift` exists: a `UserDefaults`-backed type holding `warnThreshold`
+(80), `criticalThreshold` (95), `notificationsEnabled`, and `notifySound`. Both
+the menu bar title coloring (#4) and the notification alerts (#1) read their
+thresholds from it. #5 will extend it (display style, poll interval) and add
+the Preferences UI to mutate it.
 
 ---
 
-## #1 — Threshold notifications
+## #1 — Threshold notifications — Shipped
+
+`NotificationManager.swift` posts an alert when a bucket crosses the warning or
+critical threshold; edge-triggered, with a per-reset-window latch persisted in
+`UserDefaults`. The notes below are kept for reference.
 
 **Goal:** a native macOS notification when session/weekly usage crosses a
 threshold, so you don't have to actively watch the menu bar.
@@ -117,8 +114,8 @@ request auth).
 
 ## Suggested build order
 
-1. `Settings.swift` (prerequisite for #1 and #5)
-2. **#1** — Threshold notifications
+1. ~~`Settings.swift`~~ — done
+2. ~~**#1** — Threshold notifications~~ — done
 3. **#5** — Actionable menu + Preferences
 4. **#3** — Notarized release + Homebrew cask (blocked on the Apple Developer
    account)
