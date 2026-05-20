@@ -4,10 +4,12 @@ import Dispatch
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: StateStore!
+    private var settings: Settings!
     private var watcher: StateFileWatcher!
     private var poller: OAuthPoller!
     private var menuBar: MenuBarController!
     private var setupWindow: SetupWindowController!
+    private var notifications: NotificationManager!
     private var signalSources: [DispatchSourceSignal] = []
 
     private static let didShowSetupKey = "ccu.didShowSetup"
@@ -18,15 +20,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.boot()
 
         store = StateStore()
-        menuBar = MenuBarController(store: store)
+        settings = Settings()
+        menuBar = MenuBarController(store: store, settings: settings)
         watcher = StateFileWatcher(store: store)
         poller = OAuthPoller(store: store)
         setupWindow = SetupWindowController(store: store)
+        notifications = NotificationManager(store: store, settings: settings)
 
         menuBar.onOpenSetup = { [weak self] in self?.setupWindow.show() }
 
         watcher.start()
         poller.start()
+        notifications.start()
 
         installSignalHandlers()
         showSetupOnFirstRun()

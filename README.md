@@ -28,6 +28,13 @@ Launch at login   ☐
 Quit
 ```
 
+## Usage alerts
+
+The app posts a macOS notification when session or weekly usage first crosses
+80%, and again at 95% — a heads-up before you hit a limit. Each alert fires
+once per reset window. macOS asks for notification permission on first launch;
+alerts only work from the built `.app` bundle, not `swift run`.
+
 ## Requirements
 
 - macOS 14 (Sonoma) or later, Apple Silicon

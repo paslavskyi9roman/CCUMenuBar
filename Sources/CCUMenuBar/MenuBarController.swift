@@ -1,15 +1,10 @@
 import AppKit
 import Combine
 
-/// Usage percentages at or above these levels are color-coded in the title.
-private enum UsageLevel {
-    static let warn: Double = 80
-    static let critical: Double = 95
-}
-
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let store: StateStore
+    private let settings: Settings
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private var cancellables: Set<AnyCancellable> = []
@@ -23,8 +18,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return NSFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
     }()
 
-    init(store: StateStore) {
+    init(store: StateStore, settings: Settings) {
         self.store = store
+        self.settings = settings
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         // Persist the item's menu-bar position across launches, so a manual
@@ -95,8 +91,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func color(forPct pct: Double?) -> NSColor {
         guard let pct else { return .labelColor }
-        if pct >= UsageLevel.critical { return .systemRed }
-        if pct >= UsageLevel.warn { return .systemOrange }
+        if pct >= settings.criticalThreshold { return .systemRed }
+        if pct >= settings.warnThreshold { return .systemOrange }
         return .labelColor
     }
 
