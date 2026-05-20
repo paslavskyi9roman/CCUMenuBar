@@ -1,3 +1,5 @@
+![Claude Code Usage banner](assets/readme-banner.svg)
+
 # Claude Code Usage — macOS Menu Bar
 
 A minimal menu bar app that shows your Claude Code session and weekly usage
