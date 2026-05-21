@@ -38,6 +38,13 @@ final class OAuthPoller {
         task = nil
     }
 
+    /// Trigger an immediate poll, bypassing the current sleep interval.
+    /// `start()` cancels the sleeping loop and the fresh loop ticks at once.
+    func refreshNow() {
+        Log.info("manual refresh requested")
+        start()
+    }
+
     private func loop() async {
         while !Task.isCancelled {
             let nextDelay: Duration

@@ -1,3 +1,5 @@
+![Claude Code Usage banner](assets/readme-banner.svg)
+
 # Claude Code Usage — macOS Menu Bar
 
 A minimal menu bar app that shows your Claude Code session and weekly usage
@@ -10,13 +12,14 @@ no API charges.
 
 ## What it shows
 
-Menu bar:
+Menu bar — compact, and color-coded as usage climbs (orange past 80%, red past
+95%):
 
 ```
-S 42% │ W 67%
+S42% │ W67%
 ```
 
-Click for detail:
+Click for detail and actions:
 
 ```
 Session   42%   resets in 2h 14m
@@ -24,9 +27,18 @@ Weekly    67%   resets Mon 12:00
 ─────────────────────────────────
 Source: statusline · updated 12s ago
 ─────────────────────────────────
+Refresh now
+Reveal logs in Finder
+─────────────────────────────────
+Setup…
+Preferences…
 Launch at login   ☐
+─────────────────────────────────
 Quit
 ```
+
+**Preferences** lets you tune the warning/critical thresholds and toggle the
+usage notifications and their sound.
 
 ## Usage alerts
 
