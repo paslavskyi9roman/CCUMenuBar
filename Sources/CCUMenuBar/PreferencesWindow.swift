@@ -19,6 +19,16 @@ struct PreferencesView: View {
                     Toggle("Play a sound with alerts", isOn: bool(\.notifySound))
                         .disabled(!settings.notificationsEnabled)
                         .padding(.leading, 18)
+                    Toggle("Quiet hours", isOn: bool(\.quietHoursEnabled))
+                        .disabled(!settings.notificationsEnabled)
+                    HStack(spacing: 12) {
+                        Stepper("From \(hourLabel(settings.quietHoursStart))",
+                                value: int(\.quietHoursStart), in: 0...23)
+                        Stepper("Until \(hourLabel(settings.quietHoursEnd))",
+                                value: int(\.quietHoursEnd), in: 0...23)
+                    }
+                    .disabled(!settings.notificationsEnabled || !settings.quietHoursEnabled)
+                    .padding(.leading, 18)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
@@ -51,6 +61,15 @@ struct PreferencesView: View {
     private func bool(_ keyPath: ReferenceWritableKeyPath<Settings, Bool>) -> Binding<Bool> {
         Binding(get: { settings[keyPath: keyPath] },
                 set: { settings[keyPath: keyPath] = $0 })
+    }
+
+    private func int(_ keyPath: ReferenceWritableKeyPath<Settings, Int>) -> Binding<Int> {
+        Binding(get: { settings[keyPath: keyPath] },
+                set: { settings[keyPath: keyPath] = $0 })
+    }
+
+    private func hourLabel(_ hour: Int) -> String {
+        String(format: "%02d:00", hour)
     }
 
     // Keep warn at least 5 points below critical, whichever the user drags.

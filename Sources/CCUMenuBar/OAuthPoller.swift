@@ -18,10 +18,15 @@ final class OAuthPoller {
     //   defaults write com.ccu.menubar ccu.debug.logOAuthSample -bool true
     // …then restart the app and check ~/Library/Logs/ClaudeCodeUsage/ccu.log.
     private var didLogSuccessSample = false
+    // One-time log when we discover there are no OAuth credentials on disk.
+    // Before this existed the poller went silent — the user saw `--%` and
+    // nothing in ccu.log explaining why.
+    private var didLogNoCredentials = false
     private static let debugLogSampleKey = "ccu.debug.logOAuthSample"
 
     private static let pollInterval: Duration = .seconds(60)
     private static let backoffAfterAuthStale: Duration = .seconds(300)
+    private static let backoffNoCredentials: Duration = .seconds(300)
 
     private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
 
@@ -63,6 +68,13 @@ final class OAuthPoller {
             } catch PollError.authStale {
                 await MainActor.run { store.markAuthStale() }
                 nextDelay = Self.backoffAfterAuthStale
+            } catch PollError.noCredentials {
+                if !didLogNoCredentials {
+                    didLogNoCredentials = true
+                    Log.info("OAuth poller idle: \(Self.credentialsURL.path) not found — sign in with `claude /login` to enable Producer B")
+                }
+                await MainActor.run { store.markOffline("no credentials — run `claude /login`") }
+                nextDelay = Self.backoffNoCredentials
             } catch {
                 await MainActor.run { store.markOffline(String(describing: error)) }
                 nextDelay = Self.pollInterval

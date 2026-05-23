@@ -15,6 +15,9 @@ final class Settings: ObservableObject {
         static let criticalThreshold = "ccu.criticalThreshold"
         static let notificationsEnabled = "ccu.notificationsEnabled"
         static let notifySound = "ccu.notifySound"
+        static let quietHoursEnabled = "ccu.quietHoursEnabled"
+        static let quietHoursStart = "ccu.quietHoursStart"
+        static let quietHoursEnd = "ccu.quietHoursEnd"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -24,6 +27,9 @@ final class Settings: ObservableObject {
             Keys.criticalThreshold: 95.0,
             Keys.notificationsEnabled: true,
             Keys.notifySound: true,
+            Keys.quietHoursEnabled: false,
+            Keys.quietHoursStart: 22,   // 22:00
+            Keys.quietHoursEnd: 8,      // 08:00
         ])
     }
 
@@ -47,6 +53,28 @@ final class Settings: ObservableObject {
     var notifySound: Bool {
         get { defaults.bool(forKey: Keys.notifySound) }
         set { defaults.set(newValue, forKey: Keys.notifySound); objectWillChange.send() }
+    }
+
+    /// When enabled, notifications are suppressed between `quietHoursStart`
+    /// (inclusive) and `quietHoursEnd` (exclusive). A crossing missed during
+    /// quiet hours fires on the next state update after the window ends —
+    /// the user gets a delayed heads-up rather than nothing at all.
+    var quietHoursEnabled: Bool {
+        get { defaults.bool(forKey: Keys.quietHoursEnabled) }
+        set { defaults.set(newValue, forKey: Keys.quietHoursEnabled); objectWillChange.send() }
+    }
+
+    /// Hour-of-day (0–23) at which quiet hours begin.
+    var quietHoursStart: Int {
+        get { defaults.integer(forKey: Keys.quietHoursStart) }
+        set { defaults.set(newValue, forKey: Keys.quietHoursStart); objectWillChange.send() }
+    }
+
+    /// Hour-of-day (0–23) at which quiet hours end. May be less than the
+    /// start to span midnight (e.g. 22→8).
+    var quietHoursEnd: Int {
+        get { defaults.integer(forKey: Keys.quietHoursEnd) }
+        set { defaults.set(newValue, forKey: Keys.quietHoursEnd); objectWillChange.send() }
     }
 }
 
