@@ -143,6 +143,21 @@ You should see populated `session` and `weekly` objects with a recent
 In the dropdown menu, toggle **Launch at login**. macOS may prompt you to
 approve it under System Settings → General → Login Items.
 
+### 5. (Optional) `ccu` CLI
+
+A tiny shell helper at `scripts/ccu` reads `state.json` and prints the same
+compact summary the menu bar shows — useful for shell prompts, tmux,
+Raycast, etc. Symlink it into your `PATH`:
+
+```bash
+ln -s "$(pwd)/scripts/ccu" /usr/local/bin/ccu
+ccu        # → "S42% │ W67%"
+ccu json   # → raw state.json
+```
+
+See [The `state.json` interface](#the-statejson-interface) for the schema
+and integration examples.
+
 ## How it works
 
 Two independent data producers write to one shared state file:
@@ -165,6 +180,66 @@ appears after 5 minutes.
 
 Diagnostic logs land at `~/Library/Logs/ClaudeCodeUsage/ccu.log` (rotated at
 ~1 MB). Tail it to debug parse misses against the undocumented endpoint.
+
+## The `state.json` interface
+
+`state.json` is a **documented, stable interface** — other tools can read it
+without touching the app. The file is at:
+
+```
+~/Library/Application Support/ClaudeCodeUsage/state.json
+```
+
+Both writers (the statusline bridge and the in-app OAuth poller) use a
+temp-file + `rename(2)` for atomicity, so the file is always either the
+previous contents or the new contents — never partial.
+
+### Schema
+
+```jsonc
+{
+  "session": {                          // or null when unknown
+    "used_pct": 42.0,                   // 0-100; may be null
+    "resets_at_unix": 1716494400        // unix seconds; may be null
+  },
+  "weekly": {                           // same shape; may be null
+    "used_pct": 67.0,
+    "resets_at_unix": 1716998400
+  },
+  "source": "statusline",               // "statusline" (bridge) or "oauth" (poller)
+  "updated_at": "2026-05-23T08:30:00Z"  // ISO-8601 UTC
+}
+```
+
+### `ccu` CLI
+
+The `scripts/ccu` helper is a one-screen shell script. Subcommands:
+
+```bash
+ccu             # compact "S42% │ W67%" (the menu bar title)
+ccu session     # session bucket JSON
+ccu weekly      # weekly bucket JSON
+ccu json        # full state.json
+```
+
+Example zsh prompt:
+
+```sh
+PROMPT='%~ %F{cyan}$(ccu 2>/dev/null)%f %# '
+```
+
+Example tmux status:
+
+```
+set -g status-right '#(ccu) | %H:%M'
+```
+
+### Stability
+
+The schema is versioned by the field set, not a `version` key. Adding new
+*optional* fields is non-breaking. Renaming, removing, or changing the
+type of any existing field is a breaking change and would bump the
+project's major version.
 
 ## Caveats
 

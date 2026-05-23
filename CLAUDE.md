@@ -63,6 +63,11 @@ Changing one without the other silently breaks Producer A. Both writers (the bas
 `StateStore.atomicWrite`) use the same atomic pattern: write a temp file, then `rename(2)` it
 over the destination.
 
+The schema is also a **public interface** — `scripts/ccu` and any external tool relying on the
+file (documented in README → "The `state.json` interface") consume the same shape. Adding new
+optional fields is fine; renaming, removing, or retyping existing fields is a breaking change
+that warrants a major-version bump.
+
 ### Key components
 
 - **`StateStore`** (`@MainActor ObservableObject`) — single source of truth. `ingest` applies
