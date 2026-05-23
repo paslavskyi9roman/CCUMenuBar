@@ -1,0 +1,68 @@
+#!/bin/sh
+# ccu — print Claude Code Usage from the app's state file.
+#
+# Reads ~/Library/Application Support/ClaudeCodeUsage/state.json (written by
+# the CCUMenuBar app) and emits a compact or JSON view. Designed to be cheap
+# to call from shell prompts, tmux status lines, Raycast scripts, etc.
+#
+# Symlink into your PATH:
+#   ln -s "$(pwd)/scripts/ccu" /usr/local/bin/ccu
+#
+# Usage:
+#   ccu              # compact "S42% │ W67%" (matches the menu bar title)
+#   ccu json         # raw state.json
+#   ccu session      # session bucket only
+#   ccu weekly       # weekly bucket only
+#   ccu --help
+#
+# Exit codes:
+#   0  state file exists and was read
+#   1  state file missing (app not running, or no data yet)
+#   2  bad usage or missing jq
+
+set -eu
+
+STATE_FILE="${HOME}/Library/Application Support/ClaudeCodeUsage/state.json"
+
+usage() {
+  sed -n 's/^# \{0,1\}//p' "$0" | sed -n '1,/^$/p'
+  exit "${1:-2}"
+}
+
+case "${1:-compact}" in
+  -h|--help|help) usage 0 ;;
+esac
+
+if [ ! -f "$STATE_FILE" ]; then
+  echo "ccu: $STATE_FILE not found — is CCUMenuBar running?" >&2
+  exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ccu: jq required (brew install jq)" >&2
+  exit 2
+fi
+
+case "${1:-compact}" in
+  compact)
+    jq -r '
+      def pct(b): if b == null or b.used_pct == null
+                  then "--%"
+                  else "\((b.used_pct + 0.5) | floor)%" end;
+      "S\(pct(.session)) │ W\(pct(.weekly))"
+    ' "$STATE_FILE"
+    ;;
+  session)
+    jq -r '.session // {}' "$STATE_FILE"
+    ;;
+  weekly)
+    jq -r '.weekly // {}' "$STATE_FILE"
+    ;;
+  json)
+    cat "$STATE_FILE"
+    ;;
+  *)
+    echo "ccu: unknown command '${1}'" >&2
+    usage 2
+    ;;
+esac
