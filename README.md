@@ -47,6 +47,11 @@ The app posts a macOS notification when session or weekly usage first crosses
 once per reset window. macOS asks for notification permission on first launch;
 alerts only work from the built `.app` bundle, not `swift run`.
 
+**Quiet hours.** Preferences has a "Quiet hours" toggle and a time window
+(default 22:00–08:00). Alerts that would fire during those hours are
+suppressed and instead deliver on the next state update once the window
+ends — delayed heads-up rather than a 3 AM ping.
+
 ## Requirements
 
 - macOS 14 (Sonoma) or later, Apple Silicon

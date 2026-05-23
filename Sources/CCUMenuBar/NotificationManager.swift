@@ -49,8 +49,25 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     private func evaluate() {
         guard settings.notificationsEnabled,
               Bundle.main.bundleIdentifier != nil else { return }
+        // During quiet hours, skip latch advancement entirely. A crossing
+        // that happens overnight will fire on the next state update after
+        // the window ends — delayed alert beats silent miss.
+        if isInQuietHours() { return }
         check(bucket: store.state?.session, kind: .session)
         check(bucket: store.state?.weekly, kind: .weekly)
+    }
+
+    private func isInQuietHours(now: Date = Date(),
+                                calendar: Calendar = .current) -> Bool {
+        guard settings.quietHoursEnabled else { return false }
+        let start = settings.quietHoursStart
+        let end = settings.quietHoursEnd
+        if start == end { return false }            // empty window
+        let hour = calendar.component(.hour, from: now)
+        if start < end {                            // same-day window, e.g. 13→17
+            return hour >= start && hour < end
+        }
+        return hour >= start || hour < end          // spans midnight, e.g. 22→8
     }
 
     private func check(bucket: Bucket?, kind: BucketKind) {
