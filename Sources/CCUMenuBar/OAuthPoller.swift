@@ -10,6 +10,10 @@ import Foundation
 final class OAuthPoller {
     private let store: StateStore
     private var task: Task<Void, Never>?
+    // Log one successful response per app launch at INFO so we can inspect the
+    // payload shape (e.g. for per-model fields we may not be parsing yet).
+    // Parse-misses already get a 512B dump below; this is the success path.
+    private var didLogSuccessSample = false
 
     private static let pollInterval: Duration = .seconds(60)
     private static let backoffAfterAuthStale: Duration = .seconds(300)
@@ -92,6 +96,11 @@ final class OAuthPoller {
             let preview = (String(data: data, encoding: .utf8) ?? "<binary>").prefix(512)
             Log.warn("oauth usage parse miss; raw[\(data.count)B, first 512]=\(preview)")
             throw PollError.parse
+        }
+        if !didLogSuccessSample {
+            didLogSuccessSample = true
+            let preview = (String(data: data, encoding: .utf8) ?? "<binary>").prefix(2048)
+            Log.info("oauth usage success sample [\(data.count)B, first 2048]=\(preview)")
         }
         let newState = State(
             session: parsed.session,

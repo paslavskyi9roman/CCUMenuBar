@@ -115,7 +115,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         let state = store.state
         menu.addItem(rowFor(label: "Session", bucket: state?.session))
+        if let row = paceRow(for: state?.session, kind: .session) { menu.addItem(row) }
         menu.addItem(rowFor(label: "Weekly", bucket: state?.weekly))
+        if let row = paceRow(for: state?.weekly, kind: .weekly) { menu.addItem(row) }
         menu.addItem(.separator())
         menu.addItem(statusRow())
         menu.addItem(.separator())
@@ -133,6 +135,47 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func actionItem(title: String, selector: Selector, keyEquivalent: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: keyEquivalent)
         item.target = self
+        return item
+    }
+
+    // Stale state would mislead pace (elapsed grows, pct doesn't) — and the
+    // ⚠ title prefix already flags the same condition. Suppress instead of
+    // double-handling.
+    private func paceRow(for bucket: Bucket?, kind: Pace.Kind) -> NSMenuItem? {
+        guard let bucket, !(store.state?.isStale ?? true) else { return nil }
+        guard let r = Pace.compute(bucket: bucket, kind: kind) else { return nil }
+
+        let state: String
+        let color: NSColor
+        if r.deltaPct < -3 {
+            state = "Ahead"
+            color = .systemGreen
+        } else if r.deltaPct > 3 {
+            state = "Behind"
+            color = r.projectedToHitLimit ? .systemRed : .systemOrange
+        } else {
+            state = "On track"
+            color = .secondaryLabelColor
+        }
+
+        let sign = r.deltaPct >= 0 ? "+" : "−"
+        let deltaText = "\(sign)\(Int(abs(r.deltaPct).rounded()))%"
+        let tail: String
+        if r.projectedToHitLimit, let eta = r.etaSeconds {
+            tail = "hits limit in \(Formatters.humanDuration(eta))"
+        } else {
+            tail = "lasts to reset"
+        }
+        // Leading spaces nest the row visually under the bucket. `.indentationLevel`
+        // exists but adds an icon-sized indent that's too wide for our taste.
+        let title = "   Pace: \(state) (\(deltaText)) · \(tail)"
+        let attributed = NSAttributedString(string: title, attributes: [
+            .foregroundColor: color,
+            .font: NSFont.menuFont(ofSize: 0),
+        ])
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.attributedTitle = attributed
+        item.isEnabled = false
         return item
     }
 

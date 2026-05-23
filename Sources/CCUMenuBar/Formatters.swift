@@ -24,7 +24,7 @@ enum Formatters {
         return "resets \(f.string(from: target))"
     }
 
-    private static func humanDuration(_ seconds: TimeInterval) -> String {
+    static func humanDuration(_ seconds: TimeInterval) -> String {
         let s = Int(seconds)
         let h = s / 3600
         let m = (s % 3600) / 60
