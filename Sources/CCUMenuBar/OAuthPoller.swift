@@ -10,10 +10,15 @@ import Foundation
 final class OAuthPoller {
     private let store: StateStore
     private var task: Task<Void, Never>?
-    // Log one successful response per app launch at INFO so we can inspect the
-    // payload shape (e.g. for per-model fields we may not be parsing yet).
-    // Parse-misses already get a 512B dump below; this is the success path.
+    // Opt-in probe: log one successful /api/oauth/usage response per app
+    // launch so its payload shape can be inspected (e.g. for per-model fields
+    // we may not be parsing yet). Off by default — the response is from an
+    // undocumented endpoint and we don't fully know what it carries, so we
+    // don't write it to disk without the user opting in. Enable with:
+    //   defaults write com.ccu.menubar ccu.debug.logOAuthSample -bool true
+    // …then restart the app and check ~/Library/Logs/ClaudeCodeUsage/ccu.log.
     private var didLogSuccessSample = false
+    private static let debugLogSampleKey = "ccu.debug.logOAuthSample"
 
     private static let pollInterval: Duration = .seconds(60)
     private static let backoffAfterAuthStale: Duration = .seconds(300)
@@ -97,7 +102,7 @@ final class OAuthPoller {
             Log.warn("oauth usage parse miss; raw[\(data.count)B, first 512]=\(preview)")
             throw PollError.parse
         }
-        if !didLogSuccessSample {
+        if !didLogSuccessSample, UserDefaults.standard.bool(forKey: Self.debugLogSampleKey) {
             didLogSuccessSample = true
             let preview = (String(data: data, encoding: .utf8) ?? "<binary>").prefix(2048)
             Log.info("oauth usage success sample [\(data.count)B, first 2048]=\(preview)")

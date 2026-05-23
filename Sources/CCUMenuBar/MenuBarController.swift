@@ -159,16 +159,24 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         let sign = r.deltaPct >= 0 ? "+" : "−"
-        let deltaText = "\(sign)\(Int(abs(r.deltaPct).rounded()))%"
-        let tail: String
+        let mag = Int(abs(r.deltaPct).rounded())
+        // Snap to "+0%" when the rounded magnitude is zero — avoids the
+        // visually odd "−0%" for small negative deltas like -0.4.
+        let deltaText = mag == 0 ? "+0%" : "\(sign)\(mag)%"
+        let tail: String?
         if r.projectedToHitLimit, let eta = r.etaSeconds {
             tail = "hits limit in \(Formatters.humanDuration(eta))"
+        } else if r.etaSeconds != nil {
+            // ETA computed but no bust projected. "Behind … lasts to reset"
+            // sounds contradictory — use clearer wording for that case.
+            tail = state == "Behind" ? "safe through reset" : "lasts to reset"
         } else {
-            tail = "lasts to reset"
+            // Too early in the window to extrapolate (or pct < 1) — omit tail.
+            tail = nil
         }
         // Leading spaces nest the row visually under the bucket. `.indentationLevel`
         // exists but adds an icon-sized indent that's too wide for our taste.
-        let title = "   Pace: \(state) (\(deltaText)) · \(tail)"
+        let title = "   Pace: \(state) (\(deltaText))" + (tail.map { " · \($0)" } ?? "")
         let attributed = NSAttributedString(string: title, attributes: [
             .foregroundColor: color,
             .font: NSFont.menuFont(ofSize: 0),

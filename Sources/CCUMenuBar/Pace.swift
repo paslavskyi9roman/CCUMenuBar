@@ -49,9 +49,14 @@ enum Pace {
         let expected = (elapsed / window) * 100
         let delta = pct - expected
 
+        // Average-rate extrapolation is dominated by noise until a meaningful
+        // fraction of the window has elapsed. 5%: ~15 min for the session
+        // window, ~8.4 h for weekly. Below that, show pace itself but no ETA.
+        let etaMinElapsed = window * 0.05
+
         let eta: TimeInterval?
         let willBust: Bool
-        if pct < 1.0 {
+        if pct < 1.0 || elapsed < etaMinElapsed {
             eta = nil
             willBust = false
         } else {
