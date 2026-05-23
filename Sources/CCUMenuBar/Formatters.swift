@@ -24,10 +24,12 @@ enum Formatters {
         return "resets \(f.string(from: target))"
     }
 
-    private static func humanDuration(_ seconds: TimeInterval) -> String {
+    static func humanDuration(_ seconds: TimeInterval) -> String {
         let s = Int(seconds)
-        let h = s / 3600
+        let d = s / 86_400
+        let h = (s % 86_400) / 3600
         let m = (s % 3600) / 60
+        if d > 0 { return "\(d)d \(h)h" }
         if h > 0 { return "\(h)h \(m)m" }
         if m > 0 { return "\(m)m" }
         return "\(s)s"
