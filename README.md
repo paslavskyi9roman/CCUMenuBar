@@ -99,7 +99,7 @@ any time from the menu bar dropdown → **Setup…**. It has two buttons:
 2. **Configure** — adds the `statusLine` command to `~/.claude/settings.json`.
 
 Then restart Claude Code and run a command that hits the API. The Setup window's
-third step turns green once data is flowing.
+data step turns green once usage is flowing.
 
 **Already have a statusline?** Setup preserves it. Your previous `statusLine`
 command is saved to `~/.claude/scripts/ccu-inner-statusline`, and the bridge
@@ -176,8 +176,8 @@ Two independent data producers write to one shared state file:
   the moment you close Claude Code.
 - **Producer B — OAuth poller** (inside the Mac app). Every 60 seconds, reads
   your OAuth token from `~/.claude/.credentials.json` and calls
-  `https://api.anthropic.com/api/oauth/usage`. Works even when Claude Code
-  is closed. **This endpoint is undocumented.**
+  `https://api.anthropic.com/api/oauth/usage`. Works only when that legacy
+  credentials file exists. **This endpoint is undocumented.**
 
 Last write wins. The dropdown shows which producer fed the latest number and
 how stale it is. If both fail, the menu bar shows `--%` and a "stale" warning
@@ -298,10 +298,6 @@ minutes and retries.
 - macOS 13+ requires user approval per app. Check System Settings → General →
   Login Items → Allow in the Background. Toggle the app off and on in our
   dropdown to retrigger the prompt.
-
-**Credentials file missing.**
-- `~/.claude/.credentials.json` is created on `claude login`. If you've never
-  signed in, Producer B will be silent. Producer A still works once you do.
 
 **OAuth parse miss.**
 - The endpoint shape is undocumented. If `ccu.log` shows `oauth usage parse

@@ -118,9 +118,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if let row = paceRow(for: state?.session, kind: .session) { menu.addItem(row) }
         menu.addItem(rowFor(label: "Weekly", bucket: state?.weekly))
         if let row = paceRow(for: state?.weekly, kind: .weekly) { menu.addItem(row) }
-        menu.addItem(.separator())
-        menu.addItem(statusRow())
-        if let row = oauthRefreshRow() { menu.addItem(row) }
+        if let row = statusRow() {
+            menu.addItem(.separator())
+            menu.addItem(row)
+        }
         menu.addItem(.separator())
         menu.addItem(refreshItem())
         menu.addItem(actionItem(title: "Reveal logs in Finder", selector: #selector(revealLogs)))
@@ -184,9 +185,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             // Too early in the window to extrapolate (or pct < 1) — omit tail.
             tail = nil
         }
-        // Leading spaces nest the row visually under the bucket. `.indentationLevel`
-        // exists but adds an icon-sized indent that's too wide for our taste.
-        let title = "   Pace: \(state) (\(deltaText))" + (tail.map { " · \($0)" } ?? "")
+        let title = "Pace: \(state) (\(deltaText))" + (tail.map { " · \($0)" } ?? "")
         let attributed = NSAttributedString(string: title, attributes: [
             .foregroundColor: color,
             .font: NSFont.menuFont(ofSize: 0),
@@ -211,7 +210,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return item
     }
 
-    private func statusRow() -> NSMenuItem {
+    private func statusRow() -> NSMenuItem? {
         let title: String
         switch store.producerStatus {
         case .neverSeen:
@@ -224,6 +223,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .authStale:
             title = "Auth expired — re-run `claude` to refresh."
         case .offline(let reason):
+            if shouldHideOfflineReason(reason) { return nil }
             title = "Offline: \(reason)"
         }
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
@@ -231,29 +231,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return item
     }
 
-    private func oauthRefreshRow() -> NSMenuItem? {
-        let title: String
-        switch store.oauthRefreshStatus {
-        case .idle(nil, nil, nil):
-            return nil
-        case .refreshing(let startedAt, let lastSuccessAt, _):
-            let suffix = lastSuccessAt.map { " · last success \(Formatters.ago(since: $0))" } ?? ""
-            title = "OAuth: refreshing, started \(Formatters.ago(since: startedAt))\(suffix)"
-        case .idle(let lastAttemptAt, let lastSuccessAt, let lastError):
-            if let lastError {
-                let success = lastSuccessAt.map { " · last success \(Formatters.ago(since: $0))" } ?? ""
-                title = "OAuth: last refresh failed (\(lastError))\(success)"
-            } else if let lastSuccessAt {
-                title = "OAuth: last refresh \(Formatters.ago(since: lastSuccessAt))"
-            } else if let lastAttemptAt {
-                title = "OAuth: last refresh attempt \(Formatters.ago(since: lastAttemptAt))"
-            } else {
-                return nil
-            }
-        }
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
+    private func shouldHideOfflineReason(_ reason: String) -> Bool {
+        let normalized = reason.lowercased()
+        return normalized.contains("no credentials")
+            || normalized.contains("oauth token is not readable")
     }
 
     @objc private func openSetup() {

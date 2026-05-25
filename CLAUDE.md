@@ -50,8 +50,9 @@ SwiftPM bundle resource; the in-app Setup flow (`BridgeInstaller` / `SetupWindow
 `~/.claude/scripts/` and wires up `settings.json`. Only updates while Claude Code is running.
 
 **Producer B — `OAuthPoller.swift`** runs *inside this app*. Every 60s it reads the OAuth token
-from `~/.claude/.credentials.json` and GETs the **undocumented** `https://api.anthropic.com/api/oauth/usage`
-endpoint, then writes `state.json`. Covers the gap when Claude Code is closed.
+from `~/.claude/.credentials.json` and GETs the **undocumented**
+`https://api.anthropic.com/api/oauth/usage` endpoint, then writes `state.json` when that legacy
+credentials file exists. It does not read macOS Keychain.
 
 **Consumer — the app:** `StateFileWatcher` → `StateStore` → `MenuBarController`.
 

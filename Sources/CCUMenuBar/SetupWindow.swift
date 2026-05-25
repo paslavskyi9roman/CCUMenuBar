@@ -146,9 +146,9 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Set Up Claude Code Usage")
                 .font(.title2).bold()
-            Text("Two steps connect the menu bar to Claude Code's live usage data. "
-                 + "The app also polls usage on its own every 60s, so it keeps "
-                 + "working when Claude Code is closed.")
+            Text("Connect the menu bar to Claude Code's live usage data. "
+                 + "The optional background poller uses existing Claude Code credentials "
+                 + "when they are available.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

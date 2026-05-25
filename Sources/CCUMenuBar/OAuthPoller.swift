@@ -29,7 +29,6 @@ final class OAuthPoller {
     private static let backoffNoCredentials: Duration = .seconds(300)
 
     private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
-
     private static let credentialsURL = AppPaths.claudeCredentialsFile
 
     init(store: StateStore) {
@@ -66,24 +65,24 @@ final class OAuthPoller {
             } catch PollError.authStale {
                 await MainActor.run {
                     store.markOAuthRefreshFailed("auth expired")
-                    store.markAuthStale()
+                    store.markOAuthUnavailable("auth expired", authStale: true)
                 }
                 nextDelay = Self.backoffAfterAuthStale
             } catch PollError.noCredentials {
                 if !didLogNoCredentials {
                     didLogNoCredentials = true
-                    Log.info("OAuth poller idle: \(Self.credentialsURL.path) not found — sign in with `claude /login` to enable Producer B")
+                    Log.info("OAuth poller idle: \(Self.credentialsURL.path) not found")
                 }
                 await MainActor.run {
                     store.markOAuthRefreshFailed("no credentials")
-                    store.markOffline("no credentials — run Claude login")
+                    store.markOAuthUnavailable("no credentials")
                 }
                 nextDelay = Self.backoffNoCredentials
             } catch {
                 let reason = String(describing: error)
                 await MainActor.run {
                     store.markOAuthRefreshFailed(reason)
-                    store.markOffline(reason)
+                    store.markOAuthUnavailable(reason)
                 }
                 nextDelay = Self.pollInterval
             }
@@ -148,8 +147,8 @@ final class OAuthPoller {
             ["access_token"],
         ]
         for path in candidates {
-            if let v = traverse(root, path: path) as? String, !v.isEmpty {
-                return v
+            if let value = traverse(root, path: path) as? String, !value.isEmpty {
+                return value
             }
         }
         return nil

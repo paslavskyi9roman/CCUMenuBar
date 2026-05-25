@@ -78,6 +78,21 @@ final class StateStore: @preconcurrency ObservableObject {
         scheduleNotify()
     }
 
+    func markOAuthUnavailable(_ reason: String, authStale: Bool = false) {
+        if let state, !state.isStale {
+            if producerStatus != .ok {
+                producerStatus = .ok
+                scheduleNotify()
+            }
+            return
+        }
+        if authStale {
+            markAuthStale()
+        } else {
+            markOffline(reason)
+        }
+    }
+
     func markOAuthRefreshStarted() {
         oauthRefreshStatus = .refreshing(
             startedAt: Date(),
