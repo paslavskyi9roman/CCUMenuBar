@@ -76,7 +76,7 @@ final class OAuthPoller {
                 }
                 await MainActor.run {
                     store.markOAuthRefreshFailed("no credentials")
-                    store.markOffline("no credentials — run `claude /login`")
+                    store.markOffline("no credentials — run Claude login")
                 }
                 nextDelay = Self.backoffNoCredentials
             } catch {
