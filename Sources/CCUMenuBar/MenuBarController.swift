@@ -123,6 +123,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if let row = oauthRefreshRow() { menu.addItem(row) }
         menu.addItem(.separator())
         menu.addItem(refreshItem())
+        if !ClaudeLogin.hasCredentials {
+            menu.addItem(actionItem(title: "Run Claude login…", selector: #selector(runClaudeLogin)))
+        }
         menu.addItem(actionItem(title: "Reveal logs in Finder", selector: #selector(revealLogs)))
         menu.addItem(.separator())
         menu.addItem(actionItem(title: "Setup…", selector: #selector(openSetup)))
@@ -222,9 +225,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let stale = (store.state?.isStale ?? false) ? "  (stale)" : ""
             title = "Source: \(src) · updated \(ago)\(stale)"
         case .authStale:
-            title = "Auth expired — re-run `claude` to refresh."
+            title = "Background refresh auth expired — run Claude login."
         case .offline(let reason):
-            title = "Offline: \(reason)"
+            title = "Background refresh unavailable: \(reason)"
         }
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
@@ -242,7 +245,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .idle(let lastAttemptAt, let lastSuccessAt, let lastError):
             if let lastError {
                 let success = lastSuccessAt.map { " · last success \(Formatters.ago(since: $0))" } ?? ""
-                title = "OAuth: last refresh failed (\(lastError))\(success)"
+                title = "OAuth background refresh failed (\(lastError))\(success)"
             } else if let lastSuccessAt {
                 title = "OAuth: last refresh \(Formatters.ago(since: lastSuccessAt))"
             } else if let lastAttemptAt {
@@ -266,6 +269,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func refreshNow() {
         onRefresh?()
+    }
+
+    @objc private func runClaudeLogin() {
+        ClaudeLogin.openInTerminal()
     }
 
     @objc private func revealLogs() {
