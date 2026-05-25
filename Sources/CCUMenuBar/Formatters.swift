@@ -1,6 +1,30 @@
 import Foundation
 
 enum Formatters {
+    static func compactTokens(_ tokens: Int) -> String {
+        let absTokens = abs(tokens)
+        if absTokens >= 1_000_000_000 {
+            return compact(Double(tokens) / 1_000_000_000) + "B"
+        }
+        if absTokens >= 1_000_000 {
+            return compact(Double(tokens) / 1_000_000) + "M"
+        }
+        if absTokens >= 1_000 {
+            return compact(Double(tokens) / 1_000) + "K"
+        }
+        return "\(tokens)"
+    }
+
+    private static func compact(_ value: Double) -> String {
+        if abs(value) >= 100 || value.rounded() == value {
+            return String(format: "%.0f", value)
+        }
+        if abs(value) >= 10 {
+            return String(format: "%.1f", value)
+        }
+        return String(format: "%.2f", value)
+    }
+
     static func ago(since date: Date) -> String {
         let secs = max(0, Int(Date().timeIntervalSince(date)))
         if secs < 60 { return "\(secs)s ago" }

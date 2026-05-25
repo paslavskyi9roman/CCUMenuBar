@@ -11,6 +11,10 @@ let package = Package(
             resources: [
                 .copy("Resources/ccu-statusline-bridge.sh")
             ]
+        ),
+        .testTarget(
+            name: "CCUMenuBarTests",
+            dependencies: ["CCUMenuBar"]
         )
     ]
 )

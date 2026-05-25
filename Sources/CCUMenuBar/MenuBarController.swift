@@ -5,6 +5,7 @@ import Combine
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let store: StateStore
     private let settings: Settings
+    private let usageSummaryStore = UsageSummaryStore()
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private var cancellables: Set<AnyCancellable> = []
@@ -114,6 +115,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let state = store.state
+        menu.addItem(usageSummaryItem())
+        menu.addItem(.separator())
         menu.addItem(rowFor(label: "Session", bucket: state?.session))
         if let row = paceRow(for: state?.session, kind: .session) { menu.addItem(row) }
         menu.addItem(rowFor(label: "Weekly", bucket: state?.weekly))
@@ -132,6 +135,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(launchAtLoginItem())
         menu.addItem(.separator())
         menu.addItem(actionItem(title: "Quit", selector: #selector(quit), keyEquivalent: "q"))
+    }
+
+    private func usageSummaryItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.view = UsageSummaryCardView(summary: usageSummaryStore.refresh())
+        item.isEnabled = false
+        return item
     }
 
     private func actionItem(title: String, selector: Selector, keyEquivalent: String = "") -> NSMenuItem {

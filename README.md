@@ -22,6 +22,11 @@ S42% │ W67%
 Click for detail and actions:
 
 ```
+Today tokens 37M          30d tokens     875M
+Latest tokens 81.2K
+▇▇▅▂▁▂▂▃▃▃▅█▅▄▁▃▇▄▂▂▁▃
+Top model: claude-opus-4-7
+─────────────────────────────────
 Session   42%   resets in 2h 14m
 Weekly    67%   resets Mon 12:00
 ─────────────────────────────────
@@ -258,9 +263,10 @@ for the official path.
 rely on Producer A, your menu bar freezes when you close Claude Code.
 Producer B exists specifically to cover that gap.
 
-**No absolute numbers.** Anthropic exposes percentages, not token/request
-counts. You can't see "you have 12,432 tokens left." If you need that, this
-app cannot give it to you — nobody can, until Anthropic ships the feature.
+**Local token numbers.** The summary card reads local Claude Code transcript
+logs and displays only fields present in those logs. It does not estimate
+billing or use an embedded pricing table. Anthropic still does not expose
+"you have 12,432 tokens left" style remaining limits.
 
 **Pro/Max only.** Free plan sessions don't include `rate_limits` in the
 statusline JSON, and the OAuth `/usage` endpoint may also be plan-gated.
