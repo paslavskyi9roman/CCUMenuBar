@@ -6,15 +6,6 @@ enum Log {
 
     private static let queue = DispatchQueue(label: "ccu.log.file")
 
-    private static let logDir: URL = {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Logs", isDirectory: true)
-            .appendingPathComponent("ClaudeCodeUsage", isDirectory: true)
-    }()
-
-    private static let logFile: URL = logDir.appendingPathComponent("ccu.log")
-    private static let logBackup: URL = logDir.appendingPathComponent("ccu.log.1")
     private static let rotateBytes: Int = 1_048_576
 
     private static let isoFormatter: ISO8601DateFormatter = {
@@ -24,12 +15,12 @@ enum Log {
     }()
 
     static func boot() {
-        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: AppPaths.logDirectory, withIntermediateDirectories: true)
         write("boot")
     }
 
     /// The active log file, for surfacing in Finder.
-    static var fileURL: URL { logFile }
+    static var fileURL: URL { AppPaths.appLogFile }
 
     static func warn(_ message: String) {
         osLogger.warning("\(message, privacy: .public)")
@@ -51,21 +42,21 @@ enum Log {
             rotateIfNeeded()
             let stamped = "[\(isoFormatter.string(from: Date()))] \(line)\n"
             guard let data = stamped.data(using: .utf8) else { return }
-            if let handle = try? FileHandle(forWritingTo: logFile) {
+            if let handle = try? FileHandle(forWritingTo: AppPaths.appLogFile) {
                 defer { try? handle.close() }
                 _ = try? handle.seekToEnd()
                 try? handle.write(contentsOf: data)
             } else {
-                try? data.write(to: logFile)
+                try? data.write(to: AppPaths.appLogFile)
             }
         }
     }
 
     private static func rotateIfNeeded() {
-        let attrs = try? FileManager.default.attributesOfItem(atPath: logFile.path)
+        let attrs = try? FileManager.default.attributesOfItem(atPath: AppPaths.appLogFile.path)
         let size = (attrs?[.size] as? NSNumber)?.intValue ?? 0
         guard size > rotateBytes else { return }
-        try? FileManager.default.removeItem(at: logBackup)
-        try? FileManager.default.moveItem(at: logFile, to: logBackup)
+        try? FileManager.default.removeItem(at: AppPaths.appLogBackupFile)
+        try? FileManager.default.moveItem(at: AppPaths.appLogFile, to: AppPaths.appLogBackupFile)
     }
 }

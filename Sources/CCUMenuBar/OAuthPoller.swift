@@ -30,11 +30,7 @@ final class OAuthPoller {
 
     private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
 
-    private static let credentialsURL: URL = {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude", isDirectory: true)
-            .appendingPathComponent(".credentials.json")
-    }()
+    private static let credentialsURL = AppPaths.claudeCredentialsFile
 
     init(store: StateStore) {
         self.store = store
@@ -62,21 +58,33 @@ final class OAuthPoller {
     private func loop() async {
         while !Task.isCancelled {
             let nextDelay: Duration
+            await MainActor.run { store.markOAuthRefreshStarted() }
             do {
                 try await tick()
+                await MainActor.run { store.markOAuthRefreshSucceeded() }
                 nextDelay = Self.pollInterval
             } catch PollError.authStale {
-                await MainActor.run { store.markAuthStale() }
+                await MainActor.run {
+                    store.markOAuthRefreshFailed("auth expired")
+                    store.markAuthStale()
+                }
                 nextDelay = Self.backoffAfterAuthStale
             } catch PollError.noCredentials {
                 if !didLogNoCredentials {
                     didLogNoCredentials = true
                     Log.info("OAuth poller idle: \(Self.credentialsURL.path) not found — sign in with `claude /login` to enable Producer B")
                 }
-                await MainActor.run { store.markOffline("no credentials — run `claude /login`") }
+                await MainActor.run {
+                    store.markOAuthRefreshFailed("no credentials")
+                    store.markOffline("no credentials — run Claude login")
+                }
                 nextDelay = Self.backoffNoCredentials
             } catch {
-                await MainActor.run { store.markOffline(String(describing: error)) }
+                let reason = String(describing: error)
+                await MainActor.run {
+                    store.markOAuthRefreshFailed(reason)
+                    store.markOffline(reason)
+                }
                 nextDelay = Self.pollInterval
             }
             do {
