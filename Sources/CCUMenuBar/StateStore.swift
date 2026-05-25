@@ -10,28 +10,46 @@ enum ProducerStatus: Equatable {
     case offline(reason: String)
 }
 
+enum OAuthRefreshStatus: Equatable {
+    case idle(lastAttemptAt: Date?, lastSuccessAt: Date?, lastError: String?)
+    case refreshing(startedAt: Date, lastSuccessAt: Date?, lastError: String?)
+
+    var isRefreshing: Bool {
+        if case .refreshing = self { return true }
+        return false
+    }
+
+    var lastSuccessAt: Date? {
+        switch self {
+        case .idle(_, let lastSuccessAt, _),
+             .refreshing(_, let lastSuccessAt, _):
+            return lastSuccessAt
+        }
+    }
+
+    var lastError: String? {
+        switch self {
+        case .idle(_, _, let lastError),
+             .refreshing(_, _, let lastError):
+            return lastError
+        }
+    }
+}
+
 @MainActor
-final class StateStore: ObservableObject {
+final class StateStore: @preconcurrency ObservableObject {
     let objectWillChange = PassthroughSubject<Void, Never>()
 
     private(set) var state: State?
     private(set) var producerStatus: ProducerStatus = .neverSeen
+    private(set) var oauthRefreshStatus: OAuthRefreshStatus = .idle(
+        lastAttemptAt: nil, lastSuccessAt: nil, lastError: nil)
     var lastWrittenFingerprint: String?
 
     private var debounceItem: DispatchWorkItem?
 
-    static let stateDirectory: URL = {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent("ClaudeCodeUsage", isDirectory: true)
-    }()
-
-    static let stateFile: URL = stateDirectory.appendingPathComponent("state.json")
-
     init() {
-        try? FileManager.default.createDirectory(at: Self.stateDirectory, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: AppPaths.stateDirectory, withIntermediateDirectories: true)
     }
 
     func ingest(_ next: State, fromWatcher: Bool) {
@@ -60,6 +78,28 @@ final class StateStore: ObservableObject {
         scheduleNotify()
     }
 
+    func markOAuthRefreshStarted() {
+        oauthRefreshStatus = .refreshing(
+            startedAt: Date(),
+            lastSuccessAt: oauthRefreshStatus.lastSuccessAt,
+            lastError: oauthRefreshStatus.lastError)
+        scheduleNotify()
+    }
+
+    func markOAuthRefreshSucceeded() {
+        let now = Date()
+        oauthRefreshStatus = .idle(lastAttemptAt: now, lastSuccessAt: now, lastError: nil)
+        scheduleNotify()
+    }
+
+    func markOAuthRefreshFailed(_ reason: String) {
+        oauthRefreshStatus = .idle(
+            lastAttemptAt: Date(),
+            lastSuccessAt: oauthRefreshStatus.lastSuccessAt,
+            lastError: reason)
+        scheduleNotify()
+    }
+
     func writeAndStore(_ next: State) {
         let fp = next.fingerprint()
         lastWrittenFingerprint = fp
@@ -74,7 +114,7 @@ final class StateStore: ObservableObject {
             Log.warn("encode failed for state write")
             return
         }
-        let dest = Self.stateFile
+        let dest = AppPaths.stateFile
         let tmp = dest.deletingLastPathComponent()
             .appendingPathComponent(".state.json.tmp.\(ProcessInfo.processInfo.processIdentifier)")
         do {

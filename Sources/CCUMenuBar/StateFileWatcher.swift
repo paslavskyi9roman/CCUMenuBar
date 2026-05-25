@@ -41,7 +41,7 @@ final class StateFileWatcher {
 
     private func armDirWatch() {
         cancelDir()
-        let dir = StateStore.stateDirectory.path
+        let dir = AppPaths.stateDirectory.path
         let fd = open(dir, O_EVTONLY)
         guard fd >= 0 else {
             Log.warn("could not open state dir for watch: \(dir)")
@@ -67,7 +67,7 @@ final class StateFileWatcher {
     private func armFileWatch() {
         guard !stopped else { return }
         cancelFile()
-        let path = StateStore.stateFile.path
+        let path = AppPaths.stateFile.path
         let fd = open(path, O_EVTONLY)
         guard fd >= 0 else { return }
         let src = DispatchSource.makeFileSystemObjectSource(
@@ -104,7 +104,7 @@ final class StateFileWatcher {
     }
 
     private func readNow() {
-        let url = StateStore.stateFile
+        let url = AppPaths.stateFile
         guard let data = try? Data(contentsOf: url), !data.isEmpty else { return }
         let decoder = JSONDecoder()
         guard let state = try? decoder.decode(State.self, from: data) else {

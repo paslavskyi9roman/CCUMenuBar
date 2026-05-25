@@ -120,8 +120,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if let row = paceRow(for: state?.weekly, kind: .weekly) { menu.addItem(row) }
         menu.addItem(.separator())
         menu.addItem(statusRow())
+        if let row = oauthRefreshRow() { menu.addItem(row) }
         menu.addItem(.separator())
-        menu.addItem(actionItem(title: "Refresh now", selector: #selector(refreshNow)))
+        menu.addItem(refreshItem())
         menu.addItem(actionItem(title: "Reveal logs in Finder", selector: #selector(revealLogs)))
         menu.addItem(.separator())
         menu.addItem(actionItem(title: "Setup…", selector: #selector(openSetup)))
@@ -135,6 +136,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func actionItem(title: String, selector: Selector, keyEquivalent: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: keyEquivalent)
         item.target = self
+        return item
+    }
+
+    private func refreshItem() -> NSMenuItem {
+        let refreshing = store.oauthRefreshStatus.isRefreshing
+        let item = actionItem(
+            title: refreshing ? "Refreshing…" : "Refresh now",
+            selector: #selector(refreshNow))
+        item.isEnabled = !refreshing
         return item
     }
 
@@ -215,6 +225,31 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             title = "Auth expired — re-run `claude` to refresh."
         case .offline(let reason):
             title = "Offline: \(reason)"
+        }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
+
+    private func oauthRefreshRow() -> NSMenuItem? {
+        let title: String
+        switch store.oauthRefreshStatus {
+        case .idle(nil, nil, nil):
+            return nil
+        case .refreshing(let startedAt, let lastSuccessAt, _):
+            let suffix = lastSuccessAt.map { " · last success \(Formatters.ago(since: $0))" } ?? ""
+            title = "OAuth: refreshing, started \(Formatters.ago(since: startedAt))\(suffix)"
+        case .idle(let lastAttemptAt, let lastSuccessAt, let lastError):
+            if let lastError {
+                let success = lastSuccessAt.map { " · last success \(Formatters.ago(since: $0))" } ?? ""
+                title = "OAuth: last refresh failed (\(lastError))\(success)"
+            } else if let lastSuccessAt {
+                title = "OAuth: last refresh \(Formatters.ago(since: lastSuccessAt))"
+            } else if let lastAttemptAt {
+                title = "OAuth: last refresh attempt \(Formatters.ago(since: lastAttemptAt))"
+            } else {
+                return nil
+            }
         }
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false

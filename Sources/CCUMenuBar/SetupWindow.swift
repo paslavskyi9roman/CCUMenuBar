@@ -7,8 +7,11 @@ import SwiftUI
 final class SetupModel: ObservableObject {
     @Published private(set) var scriptInstalled = false
     @Published private(set) var settingsConfigured = false
+    @Published private(set) var jqAvailable = false
+    @Published private(set) var jqDetail = ""
     @Published private(set) var receivingData = false
     @Published private(set) var dataDetail = ""
+    @Published private(set) var diagnosticsCopied = false
     @Published var errorMessage: String?
 
     private let store: StateStore
@@ -21,6 +24,10 @@ final class SetupModel: ObservableObject {
     func refresh() {
         scriptInstalled = BridgeInstaller.isScriptInstalled
         settingsConfigured = BridgeInstaller.isSettingsConfigured
+        jqAvailable = BridgeInstaller.isJQAvailable
+        jqDetail = BridgeInstaller.jqPath.map {
+            "Found jq at \($0)."
+        } ?? "jq is missing. Install it with `brew install jq` so the statusline bridge can parse usage JSON."
         if let state = store.state, !state.isStale {
             receivingData = true
             let ago = state.updatedAtDate.map { Formatters.ago(since: $0) } ?? "just now"
@@ -36,6 +43,16 @@ final class SetupModel: ObservableObject {
     func installScript() { run(BridgeInstaller.installScript) }
     func configureSettings() { run(BridgeInstaller.configureSettings) }
 
+    func copyDiagnostics() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(diagnosticsText(), forType: .string)
+        diagnosticsCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.diagnosticsCopied = false
+        }
+    }
+
     private func run(_ action: () throws -> Void) {
         do {
             try action()
@@ -44,6 +61,80 @@ final class SetupModel: ObservableObject {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         }
         refresh()
+    }
+
+    private func diagnosticsText() -> String {
+        let state = store.state
+        let session = state?.session?.usedPct.map { "\(Int($0.rounded()))%" } ?? "--"
+        let weekly = state?.weekly?.usedPct.map { "\(Int($0.rounded()))%" } ?? "--"
+        let age = state?.updatedAtDate.map { Formatters.ago(since: $0) } ?? "never"
+        let stateExists = FileManager.default.fileExists(atPath: AppPaths.stateFile.path)
+        let credentialsExist = FileManager.default.fileExists(atPath: AppPaths.claudeCredentialsFile.path)
+
+        return """
+        Claude Code Usage diagnostics
+        generated_at: \(State.nowISO())
+        bundle_id: \(Bundle.main.bundleIdentifier ?? "none")
+
+        setup:
+          script_installed: \(scriptInstalled) (\(BridgeInstaller.installedScript.path))
+          settings_configured: \(settingsConfigured) (\(BridgeInstaller.settingsFile.path))
+          jq: \(BridgeInstaller.jqPath ?? "missing")
+          credentials_file_exists: \(credentialsExist) (\(AppPaths.claudeCredentialsFile.path))
+
+        state:
+          file_exists: \(stateExists) (\(AppPaths.stateFile.path))
+          producer_status: \(producerStatusText())
+          source: \(state?.source ?? "none")
+          updated: \(state?.updatedAt ?? "never") (\(age))
+          stale: \(state?.isStale.description ?? "n/a")
+          session: \(session)
+          weekly: \(weekly)
+
+        oauth:
+          refresh: \(oauthRefreshText())
+
+        recent_app_log:
+        \(tail(AppPaths.appLogFile))
+
+        recent_bridge_log:
+        \(tail(AppPaths.bridgeLogFile))
+        """
+    }
+
+    private func producerStatusText() -> String {
+        switch store.producerStatus {
+        case .neverSeen: return "neverSeen"
+        case .ok: return "ok"
+        case .authStale: return "authStale"
+        case .offline(let reason): return "offline(\(reason))"
+        }
+    }
+
+    private func oauthRefreshText() -> String {
+        switch store.oauthRefreshStatus {
+        case .idle(let lastAttemptAt, let lastSuccessAt, let lastError):
+            return "idle(lastAttempt=\(dateText(lastAttemptAt)), lastSuccess=\(dateText(lastSuccessAt)), lastError=\(lastError ?? "none"))"
+        case .refreshing(let startedAt, let lastSuccessAt, let lastError):
+            return "refreshing(started=\(dateText(startedAt)), lastSuccess=\(dateText(lastSuccessAt)), lastError=\(lastError ?? "none"))"
+        }
+    }
+
+    private func dateText(_ date: Date?) -> String {
+        date.map { State.iso8601.string(from: $0) } ?? "never"
+    }
+
+    private func tail(_ url: URL, maxLines: Int = 20) -> String {
+        guard let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8),
+              !text.isEmpty else {
+            return "  <not found>"
+        }
+        return text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .suffix(maxLines)
+            .map { "  \($0)" }
+            .joined(separator: "\n")
     }
 }
 
@@ -79,6 +170,13 @@ struct SetupView: View {
                 enabled: model.scriptInstalled)
 
             stepRow(
+                done: model.jqAvailable,
+                title: "Verify jq dependency",
+                detail: model.jqDetail,
+                button: nil,
+                action: {})
+
+            stepRow(
                 done: model.receivingData,
                 title: "Restart Claude Code, then run a command",
                 detail: model.dataDetail,
@@ -93,13 +191,19 @@ struct SetupView: View {
             }
 
             HStack {
+                Button("Copy Diagnostics", action: model.copyDiagnostics)
+                if model.diagnosticsCopied {
+                    Text("Copied")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button("Done", action: onClose)
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
-        .frame(width: 460)
+        .frame(width: 520)
     }
 
     @ViewBuilder

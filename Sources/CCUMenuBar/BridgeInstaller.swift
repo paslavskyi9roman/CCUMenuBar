@@ -23,12 +23,11 @@ enum BridgeInstallerError: LocalizedError {
 /// statusline the user already had is preserved: its command is written to a
 /// sidecar file the bridge chains to.
 enum BridgeInstaller {
-    private static let home = FileManager.default.homeDirectoryForCurrentUser
-    static let claudeDir = home.appendingPathComponent(".claude", isDirectory: true)
-    static let scriptsDir = claudeDir.appendingPathComponent("scripts", isDirectory: true)
+    static let claudeDir = AppPaths.claudeDirectory
+    static let scriptsDir = AppPaths.claudeScriptsDirectory
     static let installedScript = scriptsDir.appendingPathComponent("ccu-statusline-bridge.sh")
     static let innerSidecar = scriptsDir.appendingPathComponent("ccu-inner-statusline")
-    static let settingsFile = claudeDir.appendingPathComponent("settings.json")
+    static let settingsFile = AppPaths.claudeSettingsFile
     static let settingsBackup = claudeDir.appendingPathComponent("settings.json.ccu-backup")
 
     /// Substring that identifies our bridge inside a `statusLine` command.
@@ -42,6 +41,25 @@ enum BridgeInstaller {
 
     static var isSettingsConfigured: Bool {
         (currentStatusLineCommand() ?? "").contains(scriptMarker)
+    }
+
+    static var jqPath: String? {
+        let envPaths = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init)
+        let searchDirs = envPaths + ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+        var seen: Set<String> = []
+        for dir in searchDirs where seen.insert(dir).inserted {
+            let candidate = URL(fileURLWithPath: dir).appendingPathComponent("jq").path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    static var isJQAvailable: Bool {
+        jqPath != nil
     }
 
     // MARK: - Actions
