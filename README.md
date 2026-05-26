@@ -6,9 +6,9 @@ A minimal menu bar app that shows your Claude Code session and weekly usage
 percentages at a glance. Sits next to the notch. No accounts, no telemetry,
 no API charges.
 
-> **Status:** v1, personal use. Relies on an **undocumented** Anthropic
-> OAuth endpoint and on Claude Code's statusline JSON shape — both can
-> break without notice. See [Caveats](#caveats).
+> **Status:** v1, personal use. Relies on Claude Code's statusline JSON
+> shape, which is uncontracted — it can change without notice. See
+> [Caveats](#caveats).
 
 ## What it shows
 
@@ -30,9 +30,9 @@ Top model: claude-opus-4-7
 Session   42%   resets in 2h 14m
 Weekly    67%   resets Mon 12:00
 ─────────────────────────────────
-Source: statusline · updated 12s ago
+Updated 12s ago
 ─────────────────────────────────
-Refresh now
+Reload now
 Reveal logs in Finder
 ─────────────────────────────────
 Setup…
@@ -66,52 +66,55 @@ ends — delayed heads-up rather than a 3 AM ping.
 
 ## Install
 
-### 1. Build the app
-
 ```bash
 git clone <this repo>
 cd CCUMenuBar
-swift build -c release
-./scripts/make-app.sh
+./scripts/install.sh
 ```
 
-The build produces `CCUMenuBar.app` in the repo root. The `make-app.sh` step
-wraps the SwiftPM binary into a proper `.app` bundle with `Info.plist` and
-ad-hoc code signing — required for `SMAppService` (Launch at login) to
-register the app.
+`install.sh` checks for `swift` and `jq`, runs `swift build -c release`,
+wraps the binary into an ad-hoc-signed `CCUMenuBar.app` via `make-app.sh`,
+and launches it. The Setup window then opens automatically.
 
-Launch it:
+> Locally-built apps don't get a `com.apple.quarantine` xattr, so Gatekeeper
+> doesn't prompt. If you ever move the `.app` to another machine via
+> AirDrop / Slack / etc., right-click → Open the first time on that machine.
 
-```bash
-open CCUMenuBar.app
-```
+### Connect to Claude Code
 
-You should see `S --% │ W --%` in your menu bar until first data arrives.
-Quit from the dropdown before continuing.
+The Setup window walks you through four steps:
 
-> First-launch Gatekeeper note: the binary is ad-hoc signed, not Developer
-> ID signed. If macOS quarantines it, right-click → Open the first time.
-
-### 2. Connect to Claude Code (Producer A)
-
-The statusline bridge feeds usage data to the app while Claude Code is running.
-The app installs it for you — no manual file copying.
-
-On first launch the **Setup** window opens automatically. You can also reopen it
-any time from the menu bar dropdown → **Setup…**. It has two buttons:
-
-1. **Install** — copies the bridge script to `~/.claude/scripts`.
+1. **Install** — copies the statusline bridge to `~/.claude/scripts/`. The
+   absolute path to your `jq` is baked into the script at this point so the
+   bridge survives Claude Code's stripped PATH at runtime.
 2. **Configure** — adds the `statusLine` command to `~/.claude/settings.json`.
+   Any existing `statusLine` is preserved (see "Already have a statusline?"
+   below).
+3. **Verify jq dependency** — auto-checked; turns green when `jq` is on PATH.
+4. **Run bridge self-test** — pipes a canary payload through the installed
+   script and verifies `state.json` reflects it. Catches stripped-PATH
+   issues, broken permissions, or jq problems before you ever start `claude`.
 
-Then restart Claude Code and run a command that hits the API. The Setup window's
-data step turns green once usage is flowing.
+Then restart Claude Code and run a command. The fifth step ("Restart Claude
+Code, then run a command") turns green once real data arrives.
 
 **Already have a statusline?** Setup preserves it. Your previous `statusLine`
 command is saved to `~/.claude/scripts/ccu-inner-statusline`, and the bridge
-chains to it — your existing HUD keeps working.
+chains to it — your existing HUD keeps working. You can also set
+`CCU_INNER_STATUSLINE` in your shell profile, which takes precedence over
+the sidecar file.
+
+**App updated?** The Setup window shows "Reinstall recommended" when the
+bundled bridge differs from the one installed on disk (script body changed,
+or your `jq` moved). One click and you're current.
 
 <details>
 <summary>Manual install (if you'd rather not use the Setup window)</summary>
+
+You'll lose the install-time `jq` path bake — the script falls through to
+its runtime fallback list (`$CCU_JQ`, common Homebrew locations, `command -v
+jq`). Usually fine, but the Setup window catches edge cases the manual path
+can't.
 
 ```bash
 mkdir -p ~/.claude/scripts
@@ -136,7 +139,7 @@ command in your shell profile, or write that command to
 `~/.claude/scripts/ccu-inner-statusline`.
 </details>
 
-### 3. Verify
+### Verify
 
 Restart Claude Code, run any command that hits the API (e.g., `claude "say hi"`),
 then check:
@@ -148,12 +151,12 @@ cat "$HOME/Library/Application Support/ClaudeCodeUsage/state.json"
 You should see populated `session` and `weekly` objects with a recent
 `updated_at`. The menu bar should reflect the same numbers within a few seconds.
 
-### 4. (Optional) Launch at login
+### (Optional) Launch at login
 
 In the dropdown menu, toggle **Launch at login**. macOS may prompt you to
 approve it under System Settings → General → Login Items.
 
-### 5. (Optional) `ccu` CLI
+### (Optional) `ccu` CLI
 
 A tiny shell helper at `scripts/ccu` reads `state.json` and prints the same
 compact summary the menu bar shows — useful for shell prompts, tmux,
@@ -170,26 +173,31 @@ and integration examples.
 
 ## How it works
 
-Two independent data producers write to one shared state file:
+A single shell script — the **statusline bridge** — is the data source.
+Claude Code calls it on each statusline tick, the bridge extracts
+`rate_limits` from the session JSON, transforms it with `jq`, and writes:
 
 ```
-~/Library/Application Support/ClaudeCodeUsage/state.json
+~/Library/Application Support/ClaudeCodeUsage/state.json          # rate_limits
+~/Library/Application Support/ClaudeCodeUsage/bridge-status.json  # heartbeat
 ```
 
-- **Producer A — statusline bridge** (this repo's shell script). Fires when
-  Claude Code is actively running. Data is fresh and free, but stops updating
-  the moment you close Claude Code.
-- **Producer B — OAuth poller** (inside the Mac app). Every 60 seconds, reads
-  your OAuth token from `~/.claude/.credentials.json` and calls
-  `https://api.anthropic.com/api/oauth/usage`. Works only when that legacy
-  credentials file exists. **This endpoint is undocumented.**
+The app watches `state.json` with kqueue and renders. `bridge-status.json`
+is a sibling file the bridge updates on **every** invocation — even when
+`rate_limits` is null — so the app can tell apart "Claude Code never
+called the bridge" from "called it, but no `rate_limits` in the payload
+yet." Both files are written via `rename(2)` for atomicity; no partial
+reads.
 
-Last write wins. The dropdown shows which producer fed the latest number and
-how stale it is. If both fail, the menu bar shows `--%` and a "stale" warning
+The bridge only fires while Claude Code is running, so the menu bar
+freezes at the last known values when you close it. A "stale" indicator
 appears after 5 minutes.
 
-Diagnostic logs land at `~/Library/Logs/ClaudeCodeUsage/ccu.log` (rotated at
-~1 MB). Tail it to debug parse misses against the undocumented endpoint.
+Diagnostic logs:
+
+- `~/Library/Logs/ClaudeCodeUsage/ccu.log` — app side (rotated at ~1 MB)
+- `~/Library/Application Support/ClaudeCodeUsage/bridge.log` — bridge errors
+  (written only on failure; an empty file means no errors)
 
 ## The `state.json` interface
 
@@ -200,9 +208,8 @@ without touching the app. The file is at:
 ~/Library/Application Support/ClaudeCodeUsage/state.json
 ```
 
-Both writers (the statusline bridge and the in-app OAuth poller) use a
-temp-file + `rename(2)` for atomicity, so the file is always either the
-previous contents or the new contents — never partial.
+The bridge writes it via temp-file + `rename(2)`, so the file is always
+either the previous contents or the new contents — never partial.
 
 ### Schema
 
@@ -216,10 +223,28 @@ previous contents or the new contents — never partial.
     "used_pct": 67.0,
     "resets_at_unix": 1716998400
   },
-  "source": "statusline",               // "statusline" (bridge) or "oauth" (poller)
+  "source": "statusline",               // always "statusline" (single producer)
   "updated_at": "2026-05-23T08:30:00Z"  // ISO-8601 UTC
 }
 ```
+
+### `bridge-status.json`
+
+Heartbeat file written on every bridge invocation, alongside `state.json`:
+
+```jsonc
+{
+  "schema_version": 1,
+  "bridge_last_seen_at": "2026-05-23T08:30:00Z",  // ISO-8601 UTC
+  "bridge_path": "/Users/you/Library/.../state.json",
+  "rate_limits_present": true,                    // false = bridge ran, no payload
+  "jq_path": "/opt/homebrew/bin/jq"               // resolved jq, useful for debugging
+}
+```
+
+Use this to distinguish "bridge never ran" from "bridge ran but Claude Code
+didn't include `rate_limits` this tick." The menu bar already surfaces both
+states; this file is for external tooling that wants the same signal.
 
 ### `ccu` CLI
 
@@ -253,64 +278,63 @@ project's major version.
 
 ## Caveats
 
-**Undocumented OAuth endpoint.** `/api/oauth/usage` was discovered by the
-community. Anthropic has not committed to keeping its shape stable. There's
-an open feature request to expose this data officially via the statusline
-JSON and a `claude usage --json` command — when that ships, swap Producer B
-for the official path.
+**Updates only while Claude Code is running.** The bridge fires on each
+statusline tick. When you close Claude Code, the menu bar freezes at the
+last known values and goes "stale" after 5 minutes.
 
-**Statusline data only updates when Claude Code is running.** If you only
-rely on Producer A, your menu bar freezes when you close Claude Code.
-Producer B exists specifically to cover that gap.
+**Uncontracted statusline JSON shape.** The `rate_limits` block in Claude
+Code's statusline JSON isn't documented as stable. If Claude Code changes
+the shape, the bridge's `jq` transform may produce nulls until updated.
 
 **Local token numbers.** The summary card reads local Claude Code transcript
 logs and displays only fields present in those logs. It does not estimate
-billing or use an embedded pricing table. Anthropic still does not expose
+billing or use an embedded pricing table. Anthropic does not expose
 "you have 12,432 tokens left" style remaining limits.
 
 **Pro/Max only.** Free plan sessions don't include `rate_limits` in the
-statusline JSON, and the OAuth `/usage` endpoint may also be plan-gated.
+statusline JSON. The bridge runs but `state.json` stays empty — the menu
+bar's status row will say "Bridge active · waiting for rate_limits."
 
 **Ad-hoc signed only.** No Developer ID signature, no notarization. Run from
-your own build. If you move `CCUMenuBar.app` around, macOS Gatekeeper may
-re-quarantine — right-click → Open the first time.
-
-**No token refresh.** If the access token expires, the dropdown will show
-"Auth expired — re-run `claude` to refresh." The poller backs off for 5
-minutes and retries.
+your own build. Locally built apps don't have the quarantine attribute, so
+Gatekeeper doesn't prompt — but if you move `CCUMenuBar.app` to another
+machine, that machine will quarantine it on receipt.
 
 ## Troubleshooting
 
-**Menu bar shows `--%` forever.**
-- Run a Claude Code command that actually hits the API (a bare `claude` prompt
-  may not). Check `state.json` is being written.
-- Look at `~/Library/Application Support/ClaudeCodeUsage/bridge.log` for
-  Producer A errors and `~/Library/Logs/ClaudeCodeUsage/ccu.log` for
-  Producer B errors.
-- Confirm your plan exposes `rate_limits` by running `claude` and checking the
-  raw statusline input — pipe a known-good fixture through the bridge to
-  isolate whether the issue is the data or the script.
+**Menu bar shows `--%` forever.** Start with the Setup window's
+**Run bridge self-test** button — it pipes a known-good payload through the
+installed script and verifies `state.json` round-trips. Three outcomes:
 
-**Numbers don't match `/usage`.**
-- `/usage` and Producer A both read the same upstream data; they should agree
-  within seconds.
-- Producer B polls every 60s. After a burst of activity, expect up to 60s of
-  lag if Claude Code isn't running.
+- **Self-test passes, menu still empty.** The bridge works. Claude Code isn't
+  invoking it. Check that you're running `claude` interactively (not
+  `claude --print`), that your `~/.claude/settings.json` actually contains
+  the bridge in `statusLine.command`, and that no `~/.claude/settings.local.json`
+  is overriding it.
+- **Self-test fails with "jq isn't on PATH" or "Bridge exited N".** The
+  script has an environment problem on this machine. Click **Reinstall** in
+  Setup — this re-bakes the absolute `jq` path into the script.
+- **Self-test passes, Setup's data step still red.** Open the menu bar
+  dropdown. If the status row says "Bridge active · waiting for rate_limits",
+  Claude Code is calling the bridge but not sending `rate_limits` (common on
+  Free plan; Pro/Max only sends it after the first real API call in a
+  session). Run `claude "say hi"` and wait a few seconds.
+
+**Useful files to inspect:**
+- `~/Library/Application Support/ClaudeCodeUsage/bridge-status.json` —
+  heartbeat (last invocation timestamp, whether `rate_limits` was present)
+- `~/Library/Application Support/ClaudeCodeUsage/bridge.log` — bridge errors;
+  an empty file means no errors (not "didn't run")
+- `~/Library/Logs/ClaudeCodeUsage/ccu.log` — app-side log
 
 **App won't launch at login.**
 - `SMAppService` requires the bundled `CCUMenuBar.app` (not the bare binary
-  from `.build/`). Confirm you ran `./scripts/make-app.sh` and you're opening
-  the `.app`, not the binary directly.
+  from `.build/`). Confirm you ran `./scripts/install.sh` (or
+  `./scripts/make-app.sh` directly) and you're opening the `.app`, not the
+  binary directly.
 - macOS 13+ requires user approval per app. Check System Settings → General →
   Login Items → Allow in the Background. Toggle the app off and on in our
   dropdown to retrigger the prompt.
-
-**OAuth parse miss.**
-- The endpoint shape is undocumented. If `ccu.log` shows `oauth usage parse
-  miss` lines, the response keys we look for don't match what your account
-  returns. Capture the raw body from the log and adjust the candidate-key
-  lists in `Sources/CCUMenuBar/OAuthPoller.swift` (`extractPercent` /
-  `extractResetsUnix` / `parseUsage`).
 
 ## Uninstall
 
@@ -322,18 +346,21 @@ rm -f ~/.claude/scripts/ccu-inner-statusline
 # Edit ~/.claude/settings.json to remove the "statusLine" key (or restore
 # ~/.claude/settings.json.ccu-backup, the copy saved before Setup ran).
 
-# 3. Remove app state and logs:
+# 3. Remove app state and logs (state.json, bridge-status.json, bridge.log):
 rm -rf "$HOME/Library/Application Support/ClaudeCodeUsage"
 rm -rf "$HOME/Library/Logs/ClaudeCodeUsage"
 
-# 4. If you registered launch at login:
+# 4. Reset NSUserDefaults (status item position, etc.):
+defaults delete com.ccu.menubar 2>/dev/null || true
+
+# 5. If you registered launch at login:
 #    System Settings → General → Login Items → remove Claude Code Usage.
 
-# 5. Remove the bundled app:
+# 6. Remove the bundled app:
 rm -rf CCUMenuBar.app
 ```
 
 ## License
 
-MIT. Personal-use tool. No warranty, especially around the undocumented
-endpoint.
+MIT. Personal-use tool. No warranty, especially around Claude Code's
+uncontracted statusline JSON shape.
