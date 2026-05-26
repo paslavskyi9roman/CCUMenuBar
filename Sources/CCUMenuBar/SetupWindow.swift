@@ -6,12 +6,15 @@ import SwiftUI
 @MainActor
 final class SetupModel: ObservableObject {
     @Published private(set) var scriptInstalled = false
+    @Published private(set) var scriptOutOfDate = false
     @Published private(set) var settingsConfigured = false
     @Published private(set) var jqAvailable = false
     @Published private(set) var jqDetail = ""
     @Published private(set) var receivingData = false
     @Published private(set) var dataDetail = ""
     @Published private(set) var diagnosticsCopied = false
+    @Published private(set) var selfTestResult: SelfTestResult?
+    @Published private(set) var selfTestRunning = false
     @Published var errorMessage: String?
 
     private let store: StateStore
@@ -23,6 +26,7 @@ final class SetupModel: ObservableObject {
 
     func refresh() {
         scriptInstalled = BridgeInstaller.isScriptInstalled
+        scriptOutOfDate = BridgeInstaller.installedScriptIsOutOfDate
         settingsConfigured = BridgeInstaller.isSettingsConfigured
         jqAvailable = BridgeInstaller.isJQAvailable
         jqDetail = BridgeInstaller.jqPath.map {
@@ -34,14 +38,41 @@ final class SetupModel: ObservableObject {
             dataDetail = "Connected — source: \(state.source), updated \(ago)."
         } else {
             receivingData = false
-            dataDetail = store.state == nil
-                ? "No usage data yet. Restart Claude Code and run a command."
-                : "Last data is stale. Restart Claude Code and run a command."
+            dataDetail = dataDetailMessage()
         }
+    }
+
+    private func dataDetailMessage() -> String {
+        if let bridge = BridgeStatus.read(), bridge.isActive {
+            let ago = bridge.lastSeenDate.map { Formatters.ago(since: $0) } ?? "just now"
+            if bridge.rateLimitsPresent {
+                return "Bridge active (last call \(ago)) but state.json hasn't been ingested yet."
+            }
+            return "Bridge active (last call \(ago)). Claude Code is calling it, but no rate_limits in the payload yet — run a command that uses the API."
+        }
+        if store.state == nil {
+            return "No usage data yet. Restart Claude Code and run a command."
+        }
+        return "Last data is stale. Restart Claude Code and run a command."
     }
 
     func installScript() { run(BridgeInstaller.installScript) }
     func configureSettings() { run(BridgeInstaller.configureSettings) }
+
+    func runSelfTest() {
+        guard !selfTestRunning else { return }
+        selfTestRunning = true
+        selfTestResult = nil
+        // Run on a background queue so the spawned bash doesn't block the UI.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = BridgeInstaller.runSelfTest()
+            DispatchQueue.main.async { [weak self] in
+                self?.selfTestRunning = false
+                self?.selfTestResult = result
+                self?.refresh()
+            }
+        }
+    }
 
     func copyDiagnostics() {
         let pasteboard = NSPasteboard.general
@@ -69,7 +100,7 @@ final class SetupModel: ObservableObject {
         let weekly = state?.weekly?.usedPct.map { "\(Int($0.rounded()))%" } ?? "--"
         let age = state?.updatedAtDate.map { Formatters.ago(since: $0) } ?? "never"
         let stateExists = FileManager.default.fileExists(atPath: AppPaths.stateFile.path)
-        let credentialsExist = FileManager.default.fileExists(atPath: AppPaths.claudeCredentialsFile.path)
+        let bridgeLogExists = FileManager.default.fileExists(atPath: AppPaths.bridgeLogFile.path)
 
         return """
         Claude Code Usage diagnostics
@@ -78,9 +109,12 @@ final class SetupModel: ObservableObject {
 
         setup:
           script_installed: \(scriptInstalled) (\(BridgeInstaller.installedScript.path))
+          script_out_of_date: \(scriptOutOfDate)
           settings_configured: \(settingsConfigured) (\(BridgeInstaller.settingsFile.path))
           jq: \(BridgeInstaller.jqPath ?? "missing")
-          credentials_file_exists: \(credentialsExist) (\(AppPaths.claudeCredentialsFile.path))
+          self_test: \(selfTestResult.map { $0.summary } ?? "not run")
+
+        bridge_heartbeat: \(bridgeHeartbeatText())
 
         state:
           file_exists: \(stateExists) (\(AppPaths.stateFile.path))
@@ -91,14 +125,12 @@ final class SetupModel: ObservableObject {
           session: \(session)
           weekly: \(weekly)
 
-        oauth:
-          refresh: \(oauthRefreshText())
+        bridge_log_exists: \(bridgeLogExists) (\(AppPaths.bridgeLogFile.path))
+        recent_bridge_log:
+        \(tail(AppPaths.bridgeLogFile))
 
         recent_app_log:
         \(tail(AppPaths.appLogFile))
-
-        recent_bridge_log:
-        \(tail(AppPaths.bridgeLogFile))
         """
     }
 
@@ -106,22 +138,16 @@ final class SetupModel: ObservableObject {
         switch store.producerStatus {
         case .neverSeen: return "neverSeen"
         case .ok: return "ok"
-        case .authStale: return "authStale"
-        case .offline(let reason): return "offline(\(reason))"
         }
     }
 
-    private func oauthRefreshText() -> String {
-        switch store.oauthRefreshStatus {
-        case .idle(let lastAttemptAt, let lastSuccessAt, let lastError):
-            return "idle(lastAttempt=\(dateText(lastAttemptAt)), lastSuccess=\(dateText(lastSuccessAt)), lastError=\(lastError ?? "none"))"
-        case .refreshing(let startedAt, let lastSuccessAt, let lastError):
-            return "refreshing(started=\(dateText(startedAt)), lastSuccess=\(dateText(lastSuccessAt)), lastError=\(lastError ?? "none"))"
-        }
-    }
-
-    private func dateText(_ date: Date?) -> String {
-        date.map { State.iso8601.string(from: $0) } ?? "never"
+    private func bridgeHeartbeatText() -> String {
+        guard let bridge = BridgeStatus.read() else { return "<no bridge-status.json>" }
+        let ago = bridge.lastSeenDate.map { Formatters.ago(since: $0) } ?? "unknown"
+        return "last_seen=\(bridge.bridgeLastSeenAt) (\(ago)) "
+            + "active=\(bridge.isActive) "
+            + "rate_limits_present=\(bridge.rateLimitsPresent) "
+            + "jq_path=\(bridge.jqPath ?? "<null>")"
     }
 
     private func tail(_ url: URL, maxLines: Int = 20) -> String {
@@ -142,21 +168,31 @@ struct SetupView: View {
     @ObservedObject var model: SetupModel
     var onClose: () -> Void
 
+    private var selfTestDetail: String {
+        if let result = model.selfTestResult {
+            return result.summary
+        }
+        return "Pipes a canary payload through the bridge and checks state.json. "
+            + "Catches PATH problems, jq issues, and broken permissions before they look like ‘nothing happens’."
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Set Up Claude Code Usage")
                 .font(.title2).bold()
             Text("Connect the menu bar to Claude Code's live usage data. "
-                 + "The optional background poller uses existing Claude Code credentials "
-                 + "when they are available.")
+                 + "Usage numbers come from Claude Code's own statusline — "
+                 + "the bridge writes them to disk and this app renders them.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             stepRow(
-                done: model.scriptInstalled,
+                done: model.scriptInstalled && !model.scriptOutOfDate,
                 title: "Install the statusline bridge",
-                detail: "Adds ccu-statusline-bridge.sh to ~/.claude/scripts.",
+                detail: model.scriptOutOfDate
+                    ? "An updated bridge ships with this app. Reinstall to pick it up."
+                    : "Adds ccu-statusline-bridge.sh to ~/.claude/scripts.",
                 button: model.scriptInstalled ? "Reinstall" : "Install",
                 action: model.installScript)
 
@@ -175,6 +211,16 @@ struct SetupView: View {
                 detail: model.jqDetail,
                 button: nil,
                 action: {})
+
+            stepRow(
+                done: model.selfTestResult?.passed ?? false,
+                title: "Run bridge self-test",
+                detail: selfTestDetail,
+                button: model.selfTestRunning ? "Testing…" : "Run test",
+                action: model.runSelfTest,
+                enabled: !model.selfTestRunning
+                    && model.scriptInstalled
+                    && model.jqAvailable)
 
             stepRow(
                 done: model.receivingData,

@@ -2,12 +2,11 @@ import Darwin
 import Dispatch
 import Foundation
 
-/// Watches the shared state file. Producer A (bash script) writes via
-/// `mv -f`, which atomically replaces the inode; that invalidates the file
-/// descriptor we'd opened for kqueue. Producer B (our OAuthPoller) does the
-/// same. So we re-arm on every `.delete | .rename` event, and we watch the
-/// parent directory as a fallback for the cold-start case where the file
-/// doesn't exist yet.
+/// Watches the shared state file. The bash bridge writes via `mv -f`, which
+/// atomically replaces the inode; that invalidates the file descriptor we'd
+/// opened for kqueue. So we re-arm on every `.delete | .rename` event, and we
+/// watch the parent directory as a fallback for the cold-start case where the
+/// file doesn't exist yet.
 final class StateFileWatcher {
     private let store: StateStore
     private let queue = DispatchQueue(label: "ccu.statefile.watcher")
@@ -118,7 +117,7 @@ final class StateFileWatcher {
             return
         }
         Task { @MainActor [weak store] in
-            store?.ingest(state, fromWatcher: true)
+            store?.ingest(state)
         }
     }
 }

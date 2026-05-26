@@ -13,12 +13,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Invoked when the user picks "Setup…". Wired up by `AppDelegate`.
     var onOpenSetup: (() -> Void)?
 
-    /// Invoked when the user picks "Refresh now".
+    /// Invoked when the user picks "Reload now".
     var onRefresh: (() -> Void)?
-
-    /// Whether the app can fetch fresh usage without waiting for Claude Code's
-    /// statusline bridge to emit a new state file.
-    var canRefreshFromNetwork: (() -> Bool)?
 
     /// Invoked when the user picks "Preferences…".
     var onOpenPreferences: (() -> Void)?
@@ -74,8 +70,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             return composeTitle(warn: false, session: nil, weekly: nil, dimmed: true)
         case .ok:
             return composeTitle(warn: stale, session: session, weekly: weekly, dimmed: stale)
-        case .authStale, .offline:
-            return composeTitle(warn: true, session: session, weekly: weekly, dimmed: false)
         }
     }
 
@@ -156,15 +150,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshItem() -> NSMenuItem {
-        let refreshing = store.oauthRefreshStatus.isRefreshing
-        let canRefreshFromNetwork = canRefreshFromNetwork?() ?? false
-        let item = actionItem(
-            title: refreshing ? "Refreshing…" : (canRefreshFromNetwork ? "Refresh now" : "Reload local data"),
-            selector: #selector(refreshNow))
-        item.isEnabled = !refreshing
-        if !canRefreshFromNetwork {
-            item.toolTip = "No OAuth credentials found. This reloads state.json; fresh statusline data arrives after Claude Code runs a command."
-        }
+        let item = actionItem(title: "Reload now", selector: #selector(refreshNow))
+        item.toolTip = "Re-reads state.json. Fresh data arrives after Claude Code runs the statusline bridge."
         return item
     }
 
@@ -241,27 +228,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let title: String
         switch store.producerStatus {
         case .neverSeen:
-            title = "No data yet — run a Claude Code command."
+            if let bridge = BridgeStatus.read(), bridge.isActive {
+                let ago = bridge.lastSeenDate.map { Formatters.ago(since: $0) } ?? "just now"
+                title = "Bridge active · waiting for rate_limits (last call \(ago))"
+            } else {
+                title = "No data yet — run a Claude Code command."
+            }
         case .ok:
-            let src = store.state?.source ?? "unknown"
             let ago = store.state?.updatedAtDate.map { Formatters.ago(since: $0) } ?? "—"
             let stale = (store.state?.isStale ?? false) ? "  (stale)" : ""
-            title = "Source: \(src) · updated \(ago)\(stale)"
-        case .authStale:
-            title = "Auth expired — re-run `claude` to refresh."
-        case .offline(let reason):
-            if shouldHideOfflineReason(reason) { return nil }
-            title = "Offline: \(reason)"
+            title = "Updated \(ago)\(stale)"
         }
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
         return item
-    }
-
-    private func shouldHideOfflineReason(_ reason: String) -> Bool {
-        let normalized = reason.lowercased()
-        return normalized.contains("no credentials")
-            || normalized.contains("oauth token is not readable")
     }
 
     @objc private func openSetup() {

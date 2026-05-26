@@ -55,3 +55,43 @@ struct State: Codable, Equatable {
         iso8601.string(from: Date())
     }
 }
+
+/// Mirrors `bridge-status.json`. The bridge writes this on every invocation;
+/// the app reads it lazily (no kqueue watch) to decide whether the bridge is
+/// running but just hasn't seen a `rate_limits` payload yet.
+struct BridgeStatus: Codable, Equatable {
+    var schemaVersion: Int
+    var bridgeLastSeenAt: String
+    var bridgePath: String?
+    var rateLimitsPresent: Bool
+    var jqPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case bridgeLastSeenAt = "bridge_last_seen_at"
+        case bridgePath = "bridge_path"
+        case rateLimitsPresent = "rate_limits_present"
+        case jqPath = "jq_path"
+    }
+
+    var lastSeenDate: Date? {
+        State.iso8601.date(from: bridgeLastSeenAt)
+    }
+
+    var ageSeconds: TimeInterval? {
+        guard let d = lastSeenDate else { return nil }
+        return Date().timeIntervalSince(d)
+    }
+
+    /// Considered "active" if we've seen a heartbeat within the last 5 minutes.
+    /// Claude Code statuslines tick frequently while a session is open, so a
+    /// gap longer than this means the bridge has stopped being invoked.
+    var isActive: Bool {
+        (ageSeconds ?? .infinity) <= 300
+    }
+
+    static func read(from url: URL = AppPaths.bridgeStatusFile) -> BridgeStatus? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(BridgeStatus.self, from: data)
+    }
+}

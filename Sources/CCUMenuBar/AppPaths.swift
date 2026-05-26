@@ -9,9 +9,6 @@ enum AppPaths {
     static let claudeScriptsDirectory = claudeDirectory
         .appendingPathComponent("scripts", isDirectory: true)
 
-    static let claudeCredentialsFile = claudeDirectory
-        .appendingPathComponent(".credentials.json")
-
     static let claudeSettingsFile = claudeDirectory
         .appendingPathComponent("settings.json")
 
@@ -22,6 +19,12 @@ enum AppPaths {
 
     static let stateFile = stateDirectory
         .appendingPathComponent("state.json")
+
+    /// Written by the bridge on every invocation, even when `rate_limits` is
+    /// null. Lets the app distinguish "bridge never invoked" from "bridge ran
+    /// but no payload."
+    static let bridgeStatusFile = stateDirectory
+        .appendingPathComponent("bridge-status.json")
 
     static let bridgeLogFile = stateDirectory
         .appendingPathComponent("bridge.log")
