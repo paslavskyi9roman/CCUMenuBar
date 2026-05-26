@@ -16,6 +16,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Invoked when the user picks "Refresh now".
     var onRefresh: (() -> Void)?
 
+    /// Whether the app can fetch fresh usage without waiting for Claude Code's
+    /// statusline bridge to emit a new state file.
+    var canRefreshFromNetwork: (() -> Bool)?
+
     /// Invoked when the user picks "Preferences…".
     var onOpenPreferences: (() -> Void)?
 
@@ -62,14 +66,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // be swallowed by the notch on a crowded menu bar. Each percentage is tinted
     // by how close it is to the limit so it reads at a glance without a click.
     private func renderTitle() -> NSAttributedString {
-        let session = store.state?.session?.usedPct
-        let weekly = store.state?.weekly?.usedPct
+        let stale = store.state?.isStale ?? true
+        let session = stale ? nil : store.state?.session?.usedPct
+        let weekly = stale ? nil : store.state?.weekly?.usedPct
         switch store.producerStatus {
         case .neverSeen:
             return composeTitle(warn: false, session: nil, weekly: nil, dimmed: true)
         case .ok:
-            return composeTitle(warn: store.state?.isStale ?? true,
-                                session: session, weekly: weekly, dimmed: false)
+            return composeTitle(warn: stale, session: session, weekly: weekly, dimmed: stale)
         case .authStale, .offline:
             return composeTitle(warn: true, session: session, weekly: weekly, dimmed: false)
         }
@@ -115,11 +119,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let state = store.state
+        let stale = state?.isStale ?? true
         menu.addItem(usageSummaryItem())
         menu.addItem(.separator())
-        menu.addItem(rowFor(label: "Session", bucket: state?.session))
+        menu.addItem(rowFor(label: "Session", bucket: state?.session, stale: stale))
         if let row = paceRow(for: state?.session, kind: .session) { menu.addItem(row) }
-        menu.addItem(rowFor(label: "Weekly", bucket: state?.weekly))
+        menu.addItem(rowFor(label: "Weekly", bucket: state?.weekly, stale: stale))
         if let row = paceRow(for: state?.weekly, kind: .weekly) { menu.addItem(row) }
         if let row = statusRow() {
             menu.addItem(.separator())
@@ -152,10 +157,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func refreshItem() -> NSMenuItem {
         let refreshing = store.oauthRefreshStatus.isRefreshing
+        let canRefreshFromNetwork = canRefreshFromNetwork?() ?? false
         let item = actionItem(
-            title: refreshing ? "Refreshing…" : "Refresh now",
+            title: refreshing ? "Refreshing…" : (canRefreshFromNetwork ? "Refresh now" : "Reload local data"),
             selector: #selector(refreshNow))
         item.isEnabled = !refreshing
+        if !canRefreshFromNetwork {
+            item.toolTip = "No OAuth credentials found. This reloads state.json; fresh statusline data arrives after Claude Code runs a command."
+        }
         return item
     }
 
@@ -206,10 +215,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return item
     }
 
-    private func rowFor(label: String, bucket: Bucket?) -> NSMenuItem {
-        let pct = bucket?.usedPct.map { "\(Int($0.rounded()))%" } ?? "--%"
+    private func rowFor(label: String, bucket: Bucket?, stale: Bool) -> NSMenuItem {
+        let pct = stale ? "--%" : (bucket?.usedPct.map { "\(Int($0.rounded()))%" } ?? "--%")
         let resets: String
-        if let unix = bucket?.resetsAtUnix {
+        if stale {
+            resets = "stale data"
+        } else if let unix = bucket?.resetsAtUnix {
             resets = Formatters.resetInOrAt(unix: unix)
         } else {
             resets = "unknown reset"
@@ -217,6 +228,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let title = "\(label)   \(pct)   \(resets)"
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
+        if stale {
+            item.attributedTitle = NSAttributedString(string: title, attributes: [
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .font: NSFont.menuFont(ofSize: 0),
+            ])
+        }
         return item
     }
 

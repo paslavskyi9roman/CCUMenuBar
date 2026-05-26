@@ -31,7 +31,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menuBar.onOpenSetup = { [weak self] in self?.setupWindow.show() }
         menuBar.onOpenPreferences = { [weak self] in self?.preferencesWindow.show() }
-        menuBar.onRefresh = { [weak self] in self?.poller.refreshNow() }
+        menuBar.onRefresh = { [weak self] in
+            guard let self else { return }
+            self.watcher.refreshNow()
+            if self.poller.canRefresh {
+                self.poller.refreshNow()
+            } else {
+                Log.info("manual local reload requested; OAuth credentials unavailable")
+            }
+        }
+        menuBar.canRefreshFromNetwork = { [weak self] in
+            self?.poller.canRefresh ?? false
+        }
 
         watcher.start()
         poller.start()

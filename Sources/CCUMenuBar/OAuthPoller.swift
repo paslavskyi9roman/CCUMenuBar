@@ -35,6 +35,10 @@ final class OAuthPoller {
         self.store = store
     }
 
+    var canRefresh: Bool {
+        FileManager.default.isReadableFile(atPath: Self.credentialsURL.path)
+    }
+
     func start() {
         stop()
         task = Task { [weak self] in

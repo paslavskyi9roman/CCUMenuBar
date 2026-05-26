@@ -39,6 +39,12 @@ final class StateFileWatcher {
         }
     }
 
+    func refreshNow() {
+        queue.async { [weak self] in
+            self?.readNow()
+        }
+    }
+
     private func armDirWatch() {
         cancelDir()
         let dir = AppPaths.stateDirectory.path
