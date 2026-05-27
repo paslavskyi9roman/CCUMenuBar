@@ -9,6 +9,17 @@ struct Bucket: Codable, Equatable {
         case usedPct = "used_pct"
         case resetsAtUnix = "resets_at_unix"
     }
+
+    /// True when `resets_at_unix` is meaningfully in the past. After a window
+    /// boundary, Claude Code briefly keeps emitting the *previous* window's
+    /// `used_percentage` paired with the (now-past) old `resets_at`, until the
+    /// first API call in the new window refreshes them. Treating those readings
+    /// as untrustworthy keeps the UI from showing yesterday's number as if it
+    /// were today's. 30s grace avoids flicker at the exact reset moment.
+    var isResetOverdue: Bool {
+        guard let unix = resetsAtUnix else { return false }
+        return Date().timeIntervalSince(Date(timeIntervalSince1970: TimeInterval(unix))) > 30
+    }
 }
 
 struct State: Codable, Equatable {

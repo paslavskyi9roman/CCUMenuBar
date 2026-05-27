@@ -10,12 +10,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var setupWindow: SetupWindowController!
     private var preferencesWindow: PreferencesWindowController!
     private var notifications: NotificationManager!
+    private var watchdog: BridgeWatchdog!
     private var signalSources: [DispatchSourceSignal] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         Log.boot()
+        logBootDiagnostics()
 
         store = StateStore()
         settings = Settings()
@@ -24,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupWindow = SetupWindowController(store: store)
         preferencesWindow = PreferencesWindowController(settings: settings)
         notifications = NotificationManager(store: store, settings: settings)
+        watchdog = BridgeWatchdog(settings: settings)
 
         menuBar.onOpenSetup = { [weak self] in self?.setupWindow.show() }
         menuBar.onOpenPreferences = { [weak self] in self?.preferencesWindow.show() }
@@ -33,9 +36,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         watcher.start()
         notifications.start()
+        watchdog.start()
 
         installSignalHandlers()
         showSetupOnFirstRun()
+    }
+
+    /// Snapshot of bridge install state, heartbeat, and on-disk state.json,
+    /// written to `ccu.log` so remote testers can hand us just the app log and
+    /// we can triage without needing them to open Setup → Copy Diagnostics.
+    private func logBootDiagnostics() {
+        let script = BridgeInstaller.isScriptInstalled
+        let scriptOutOfDate = script && BridgeInstaller.installedScriptIsOutOfDate
+        let settings = BridgeInstaller.isSettingsConfigured
+        let jq = BridgeInstaller.jqPath ?? "missing"
+        Log.info("bridge setup: script=\(script) script_out_of_date=\(scriptOutOfDate) settings=\(settings) jq=\(jq)")
+
+        if let bridge = BridgeStatus.read() {
+            let age = bridge.ageSeconds.map { "\(Int($0))s" } ?? "unknown"
+            Log.info("bridge heartbeat: present=true last_seen=\(bridge.bridgeLastSeenAt) age=\(age) active=\(bridge.isActive) rate_limits_present=\(bridge.rateLimitsPresent) jq=\(bridge.jqPath ?? "null")")
+        } else {
+            Log.info("bridge heartbeat: present=false")
+        }
+
+        let stateFile = AppPaths.stateFile
+        guard FileManager.default.fileExists(atPath: stateFile.path) else {
+            Log.info("state: file=false")
+            return
+        }
+        guard let data = try? Data(contentsOf: stateFile),
+              let state = try? JSONDecoder().decode(State.self, from: data) else {
+            Log.info("state: file=true unreadable")
+            return
+        }
+        let age = state.ageSeconds.map { "\(Int($0))s" } ?? "unknown"
+        let session = state.session?.usedPct.map { String(format: "%.1f%%", $0) } ?? "nil"
+        let weekly = state.weekly?.usedPct.map { String(format: "%.1f%%", $0) } ?? "nil"
+        Log.info("state: file=true source=\(state.source) updated=\(state.updatedAt) age=\(age) stale=\(state.isStale) session=\(session) weekly=\(weekly)")
     }
 
     /// Auto-open Setup whenever the bridge isn't installed. The bridge is the
@@ -50,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         watcher?.stop()
+        watchdog?.stop()
         Log.flush()
     }
 

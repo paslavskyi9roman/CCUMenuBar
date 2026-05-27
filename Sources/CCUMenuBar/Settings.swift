@@ -76,5 +76,19 @@ final class Settings: ObservableObject {
         get { defaults.integer(forKey: Keys.quietHoursEnd) }
         set { defaults.set(newValue, forKey: Keys.quietHoursEnd); objectWillChange.send() }
     }
+
+    /// Shared "should we suppress notifications right now?" check used by both
+    /// the usage-threshold alerter and the bridge watchdog so they can't drift.
+    func isInQuietHours(now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        guard quietHoursEnabled else { return false }
+        let start = quietHoursStart
+        let end = quietHoursEnd
+        if start == end { return false }
+        let hour = calendar.component(.hour, from: now)
+        if start < end {
+            return hour >= start && hour < end
+        }
+        return hour >= start || hour < end
+    }
 }
 

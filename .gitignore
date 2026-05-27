@@ -5,6 +5,7 @@ CCUMenuBar.app/
 .DS_Store
 *.xcodeproj/
 *.xcworkspace/
+*.log
 
 /.idea
 /.vscode
