@@ -14,6 +14,12 @@ final class OAuthPoller {
     private static let pollInterval: Duration = .seconds(60)
     private static let backoffAfterAuthStale: Duration = .seconds(300)
     private static let backoffNoCredentials: Duration = .seconds(300)
+    private static let backoffRateLimited: Duration = .seconds(300)
+    /// `Retry-After` is clamped to this range so neither a tiny value (which
+    /// would keep hammering a throttled endpoint) nor a bogus huge one can
+    /// wedge the poller. Floor matches the normal poll cadence.
+    private static let minRetryAfter = 60
+    private static let maxRetryAfter = 3600
     private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     private static let credentialsURL = AppPaths.claudeCredentialsFile
     private static let debugLogSampleKey = "ccu.debug.logOAuthSample"
@@ -61,6 +67,10 @@ final class OAuthPoller {
             } catch PollError.authStale {
                 Log.warn("oauth refresh failed: auth expired")
                 nextDelay = Self.backoffAfterAuthStale
+            } catch PollError.rateLimited(let retryAfter) {
+                let delay = retryAfter ?? Self.backoffRateLimited
+                Log.warn("oauth refresh rate-limited (429); backing off \(delay)")
+                nextDelay = delay
             } catch PollError.noCredentials {
                 if !didLogNoCredentials {
                     didLogNoCredentials = true
@@ -119,6 +129,13 @@ final class OAuthPoller {
         }
         if http.statusCode == 401 || http.statusCode == 403 {
             throw PollError.authStale
+        }
+        // 429 is server-side throttling, not a per-credential problem, so back
+        // off the whole poller rather than walking to the next token (which
+        // would just add load). Honor `Retry-After` when the server sends it.
+        if http.statusCode == 429 {
+            throw PollError.rateLimited(
+                retryAfter: Self.parseRetryAfter(http.value(forHTTPHeaderField: "Retry-After")))
         }
         guard (200..<300).contains(http.statusCode) else {
             throw PollError.transport("http \(http.statusCode)")
@@ -259,11 +276,23 @@ final class OAuthPoller {
         }
         return cur
     }
+
+    /// Parses the delta-seconds form of a `Retry-After` header (e.g. `120`)
+    /// into a clamped `Duration`. Returns nil for a missing, non-numeric, or
+    /// non-positive value so the caller falls back to the default backoff. The
+    /// HTTP-date form is uncommon for this endpoint and treated as absent.
+    static func parseRetryAfter(_ raw: String?) -> Duration? {
+        guard let raw, let secs = Int(raw.trimmingCharacters(in: .whitespaces)), secs > 0 else {
+            return nil
+        }
+        return .seconds(min(max(secs, minRetryAfter), maxRetryAfter))
+    }
 }
 
 private enum PollError: Error {
     case noCredentials
     case authStale
+    case rateLimited(retryAfter: Duration?)
     case transport(String)
     case parse
 }
