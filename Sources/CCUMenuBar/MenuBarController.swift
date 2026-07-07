@@ -63,7 +63,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func startUsageSummaryTimer() {
         let t = Timer(timeInterval: Self.usageSummaryRefreshInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshUsageSummaryAsync() }
+            guard let self else { return }
+            Task { @MainActor in self.refreshUsageSummaryAsync() }
         }
         RunLoop.main.add(t, forMode: .common)
         usageSummaryTimer = t
@@ -182,7 +183,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // loop in `.eventTracking`, and `Timer.scheduledTimer` would only add
         // to `.default`, so the timer would never fire while the menu is open.
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateStatusRowInPlace() }
+            guard let self else { return }
+            Task { @MainActor in self.updateStatusRowInPlace() }
         }
         RunLoop.main.add(t, forMode: .common)
         openMenuTimer = t

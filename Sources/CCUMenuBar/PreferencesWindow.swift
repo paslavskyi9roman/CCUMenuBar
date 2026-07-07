@@ -7,7 +7,9 @@ import UserNotifications
 /// live via `Settings`' `objectWillChange`.
 struct PreferencesView: View {
     @ObservedObject var settings: Settings
-    @State private var notificationsDeniedInSystemSettings = false
+    // Fully qualified: this module declares its own `State` type
+    // (`StateModel.swift`), which shadows `SwiftUI.State` for a bare `@State`.
+    @SwiftUI.State private var notificationsDeniedInSystemSettings = false
     var onClose: () -> Void
 
     var body: some View {
