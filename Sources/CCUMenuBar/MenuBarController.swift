@@ -1,6 +1,39 @@
 import AppKit
 import Combine
 
+/// Pure model of the status-item title — the percent values plus the dim/warn
+/// flags `MenuBarController.composeTitle` turns into colored segments. Extracted
+/// so the stale-vs-blank decision (which used to hide real numbers behind
+/// "--%") has direct test coverage without standing up an `NSStatusItem`.
+struct TitleModel: Equatable {
+    var warn: Bool
+    var sessionPct: Double?
+    var weeklyPct: Double?
+    var sessionDim: Bool
+    var weeklyDim: Bool
+
+    static func make(producer: ProducerStatus, state: State?) -> TitleModel {
+        switch producer {
+        case .neverSeen:
+            // No producer has ever written — nothing real to show.
+            return TitleModel(warn: false, sessionPct: nil, weeklyPct: nil,
+                              sessionDim: true, weeklyDim: true)
+        case .ok:
+            let stale = state?.isStale ?? true
+            let sessionOverdue = state?.session?.isResetOverdue ?? false
+            let weeklyOverdue = state?.weekly?.isResetOverdue ?? false
+            // Stale/overdue dims the number and raises ⚠ but keeps the
+            // last-known value visible — a greyed real percentage beats "--%".
+            return TitleModel(
+                warn: stale || sessionOverdue || weeklyOverdue,
+                sessionPct: state?.session?.usedPct,
+                weeklyPct: state?.weekly?.usedPct,
+                sessionDim: stale,
+                weeklyDim: stale)
+        }
+    }
+}
+
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let store: StateStore
@@ -105,29 +138,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // be swallowed by the notch on a crowded menu bar. Each percentage is tinted
     // by how close it is to the limit so it reads at a glance without a click.
     private func renderTitle() -> NSAttributedString {
-        let state = store.state
-        let stale = state?.isStale ?? true
-        let sessionOverdue = state?.session?.isResetOverdue ?? false
-        let weeklyOverdue = state?.weekly?.isResetOverdue ?? false
-        // Overdue keeps the percentage visible — the menu row's "reset due"
-        // tail and the title's ⚠ prefix already convey that the number is
-        // from the previous window. Hiding it just makes the menu look broken
-        // for the several minutes between window reset and Claude Code's first
-        // API call of the new window.
-        let sessionDim = stale
-        let weeklyDim = stale
-        let sessionPct: Double? = sessionDim ? nil : state?.session?.usedPct
-        let weeklyPct: Double? = weeklyDim ? nil : state?.weekly?.usedPct
-        let warn = stale || sessionOverdue || weeklyOverdue
-
-        switch store.producerStatus {
-        case .neverSeen:
-            return composeTitle(warn: false, sessionPct: nil, sessionDim: true,
-                                weeklyPct: nil, weeklyDim: true)
-        case .ok:
-            return composeTitle(warn: warn, sessionPct: sessionPct, sessionDim: sessionDim,
-                                weeklyPct: weeklyPct, weeklyDim: weeklyDim)
-        }
+        let m = TitleModel.make(producer: store.producerStatus, state: store.state)
+        return composeTitle(warn: m.warn,
+                            sessionPct: m.sessionPct, sessionDim: m.sessionDim,
+                            weeklyPct: m.weeklyPct, weeklyDim: m.weeklyDim)
     }
 
     // Each bucket carries its own dim flag — session can be overdue (previous
@@ -325,11 +339,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func applyBucketRow(item: NSMenuItem, label: String, bucket: Bucket?, stale: Bool) {
-        // Only `stale` hides the percentage. A reset that's already passed
-        // gets surfaced via the "reset due" tail (from Formatters) without
-        // wiping the number — the previous window's percentage is still useful
-        // info ("you finished at 31%"), and hiding it just looks like a bug.
-        let pct = stale ? "--%" : (bucket?.usedPct.map { "\(Int($0.rounded()))%" } ?? "--%")
+        // Neither stale data nor an already-passed reset hides the percentage:
+        // the last-known number is still useful info ("you finished at 31%"),
+        // and the "stale data" / "reset due" tail already conveys that it isn't
+        // live. Hiding it just looks like a bug. Only an absent value → "--%".
+        let pct = bucket?.usedPct.map { "\(Int($0.rounded()))%" } ?? "--%"
         let resets: String
         if stale {
             resets = "stale data"
