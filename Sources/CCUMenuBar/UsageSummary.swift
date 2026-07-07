@@ -12,6 +12,11 @@ struct UsageSummary: Equatable {
     var topModel: String?
     var dailySeries: [Day]
     var hasUsage: Bool
+
+    /// Placeholder shown before the first background refresh completes.
+    static let empty = UsageSummary(
+        todayTokens: 0, thirtyDayTokens: 0, latestTokens: nil,
+        topModel: nil, dailySeries: [], hasUsage: false)
 }
 
 struct UsageEvent: Equatable {
@@ -40,19 +45,33 @@ final class UsageSummaryStore {
     private let projectsDirectory: URL
     private var cache: [String: FileCache] = [:]
     private let calendar = Calendar.current
-    private static let fractionalISO8601: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
+    /// Serializes `refresh()` calls off the caller's thread. Mutates `cache`,
+    /// so it must never run concurrently with itself — this queue is the only
+    /// place `refresh()` should be invoked from.
+    private let queue = DispatchQueue(label: "ccu.usagesummary", qos: .utility)
 
     init(projectsDirectory: URL = AppPaths.claudeDirectory.appendingPathComponent("projects", isDirectory: true)) {
         self.projectsDirectory = projectsDirectory
     }
 
+    /// Scans and parses `~/.claude/projects/**/*.jsonl` synchronously. This
+    /// walks and re-parses every changed transcript file, which can be slow
+    /// for large histories — call via `refreshAsync` from anywhere that isn't
+    /// already a background queue (in particular, never from menu construction
+    /// on the main thread).
     func refresh() -> UsageSummary {
         let events = dedupedEvents(from: loadEvents())
         return summarize(events)
+    }
+
+    /// Same computation as `refresh()`, dispatched onto a private background
+    /// queue so the caller (typically the main thread, during menu
+    /// construction) never blocks on transcript I/O and JSON parsing.
+    /// `completion` is called back on that same background queue.
+    func refreshAsync(completion: @escaping (UsageSummary) -> Void) {
+        queue.async { [self] in
+            completion(refresh())
+        }
     }
 
     private func loadEvents() -> [UsageEvent] {
@@ -149,14 +168,7 @@ final class UsageSummaryStore {
     }
 
     private func emptySummary() -> UsageSummary {
-        UsageSummary(
-            todayTokens: 0,
-            thirtyDayTokens: 0,
-            latestTokens: nil,
-            topModel: nil,
-            dailySeries: [],
-            hasUsage: false
-        )
+        .empty
     }
 
     private static func parseJSONL(at url: URL) -> [UsageEvent] {
@@ -213,6 +225,6 @@ final class UsageSummaryStore {
     }
 
     private static func parseTimestamp(_ value: String) -> Date? {
-        fractionalISO8601.date(from: value) ?? State.iso8601.date(from: value)
+        State.parseTimestamp(value)
     }
 }

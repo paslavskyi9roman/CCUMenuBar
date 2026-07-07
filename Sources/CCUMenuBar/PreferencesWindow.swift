@@ -1,11 +1,15 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 /// Preferences pane — notification toggles and the usage thresholds. Bound
 /// directly to `Settings`; edits persist immediately and the menu bar re-colors
 /// live via `Settings`' `objectWillChange`.
 struct PreferencesView: View {
     @ObservedObject var settings: Settings
+    // Fully qualified: this module declares its own `State` type
+    // (`StateModel.swift`), which shadows `SwiftUI.State` for a bare `@State`.
+    @SwiftUI.State private var notificationsDeniedInSystemSettings = false
     var onClose: () -> Void
 
     var body: some View {
@@ -15,6 +19,16 @@ struct PreferencesView: View {
 
             GroupBox("Notifications") {
                 VStack(alignment: .leading, spacing: 10) {
+                    // The in-app toggle only controls whether we *try* to post
+                    // alerts — if macOS itself denied the permission, toggling
+                    // this on does nothing, and that's not obvious without this.
+                    if notificationsDeniedInSystemSettings {
+                        Label(
+                            "Notifications are turned off for this app in System Settings → Notifications.",
+                            systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                     Toggle("Alert me when usage is high", isOn: bool(\.notificationsEnabled))
                     Toggle("Play a sound with alerts", isOn: bool(\.notifySound))
                         .disabled(!settings.notificationsEnabled)
@@ -56,6 +70,15 @@ struct PreferencesView: View {
         }
         .padding(24)
         .frame(width: 380)
+        .task { await refreshAuthorizationStatus() }
+    }
+
+    private func refreshAuthorizationStatus() async {
+        // Bare `swift run` has no bundle identifier; querying UNUserNotificationCenter
+        // there traps, same guard as NotificationManager.start().
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let status = await UNUserNotificationCenter.current().notificationSettings()
+        notificationsDeniedInSystemSettings = status.authorizationStatus == .denied
     }
 
     private func bool(_ keyPath: ReferenceWritableKeyPath<Settings, Bool>) -> Binding<Bool> {

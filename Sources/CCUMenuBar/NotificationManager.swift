@@ -37,7 +37,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 Log.info("notification authorization granted=\(granted)")
             }
         }
-        store.objectWillChange
+        store.stateDidChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.evaluate() }
             .store(in: &cancellables)

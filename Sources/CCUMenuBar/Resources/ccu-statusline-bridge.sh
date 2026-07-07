@@ -26,11 +26,14 @@
 
 set -uo pipefail
 
-STATE_DIR="${HOME}/Library/Application Support/ClaudeCodeUsage"
+# CCU_STATE_DIR overrides the default location. Used by the app's Setup
+# self-test to run the bridge against a throwaway directory instead of the
+# live state.json, so a self-test can never race the app's file watcher.
+STATE_DIR="${CCU_STATE_DIR:-${HOME}/Library/Application Support/ClaudeCodeUsage}"
 STATE_FILE="${STATE_DIR}/state.json"
-STATE_TMP="${STATE_FILE}.tmp.$$"
+STATE_TMP="${STATE_DIR}/.state.json.tmp.$$"
 BRIDGE_STATUS_FILE="${STATE_DIR}/bridge-status.json"
-BRIDGE_STATUS_TMP="${BRIDGE_STATUS_FILE}.tmp.$$"
+BRIDGE_STATUS_TMP="${STATE_DIR}/.bridge-status.json.tmp.$$"
 LOG_FILE="${STATE_DIR}/bridge.log"
 
 mkdir -p "${STATE_DIR}"
@@ -102,6 +105,7 @@ else
     NEW_STATE="$(printf '%s' "${RATE_LIMITS}" | "${JQ}" \
       --arg now "${NOW_ISO}" \
       '{
+        schema_version: 1,
         session: (
           if .five_hour then
             {
@@ -137,14 +141,16 @@ write_bridge_status "${RATE_LIMITS_PRESENT}"
 
 # Chain to the user's inner statusline if configured. Otherwise emit a minimal
 # default so the user's terminal status bar isn't blank.
+#
+# The sidecar is run as a script (not scraped for its first line) so a
+# multi-line prior statusline command survives the chain intact.
 INNER_CMD="${CCU_INNER_STATUSLINE:-}"
 INNER_SIDECAR="${HOME}/.claude/scripts/ccu-inner-statusline"
-if [[ -z "${INNER_CMD}" && -f "${INNER_SIDECAR}" ]]; then
-  INNER_CMD="$(grep -v -e '^[[:space:]]*$' -e '^[[:space:]]*#' "${INNER_SIDECAR}" 2>/dev/null | head -n 1)"
-fi
 
 if [[ -n "${INNER_CMD}" ]]; then
   printf '%s\n' "${INPUT}" | sh -c "${INNER_CMD}"
+elif [[ -f "${INNER_SIDECAR}" ]]; then
+  printf '%s\n' "${INPUT}" | sh "${INNER_SIDECAR}"
 elif [[ -n "${JQ}" ]]; then
   printf '%s' "${INPUT}" | "${JQ}" -r '
     [

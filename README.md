@@ -215,6 +215,7 @@ either the previous contents or the new contents — never partial.
 
 ```jsonc
 {
+  "schema_version": 1,                  // optional; absent on pre-versioning files
   "session": {                          // or null when unknown
     "used_pct": 42.0,                   // 0-100; may be null
     "resets_at_unix": 1716494400        // unix seconds; may be null
@@ -224,7 +225,7 @@ either the previous contents or the new contents — never partial.
     "resets_at_unix": 1716998400
   },
   "source": "statusline",               // always "statusline" (single producer)
-  "updated_at": "2026-05-23T08:30:00Z"  // ISO-8601 UTC
+  "updated_at": "2026-05-23T08:30:00Z"  // ISO-8601 UTC; fractional seconds also accepted
 }
 ```
 
@@ -285,6 +286,11 @@ last known values and goes "stale" after 5 minutes.
 **Uncontracted statusline JSON shape.** The `rate_limits` block in Claude
 Code's statusline JSON isn't documented as stable. If Claude Code changes
 the shape, the bridge's `jq` transform may produce nulls until updated.
+
+**Hard-coded reset window lengths.** The "Pace" projection in the dropdown
+assumes a 5-hour session window and a 7-day weekly window (`Pace.swift`).
+These aren't derived from the data — if Anthropic changes the window
+lengths, pace projections will be wrong until the constants are updated.
 
 **Local token numbers.** The summary card reads local Claude Code transcript
 logs and displays only fields present in those logs. It does not estimate

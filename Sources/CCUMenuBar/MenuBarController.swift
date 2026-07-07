@@ -10,6 +10,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private var cancellables: Set<AnyCancellable> = []
 
+    // Scanning ~/.claude/projects can be slow for large transcript histories,
+    // so we never compute it on the main thread during menu construction.
+    // Instead a background timer keeps this cache warm, and `usageSummaryItem`
+    // just renders whatever's here — stale by up to `usageSummaryRefreshInterval`,
+    // never a beachball.
+    private var cachedUsageSummary = UsageSummary.empty
+    private var usageSummaryTimer: Timer?
+    private static let usageSummaryRefreshInterval: TimeInterval = 60
+
     // Held while the menu is open so we can re-render in place — state can
     // change between `menuNeedsUpdate` and the next close, and the time-relative
     // status row needs to advance every second. Without these refs the open
@@ -48,12 +57,31 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         bind()
         updateTitle()
+        refreshUsageSummaryAsync()
+        startUsageSummaryTimer()
+    }
+
+    private func startUsageSummaryTimer() {
+        let t = Timer(timeInterval: Self.usageSummaryRefreshInterval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.refreshUsageSummaryAsync() }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        usageSummaryTimer = t
+    }
+
+    private func refreshUsageSummaryAsync() {
+        usageSummaryStore.refreshAsync { [weak self] summary in
+            Task { @MainActor in
+                self?.cachedUsageSummary = summary
+            }
+        }
     }
 
     private func bind() {
         // Re-render the title when usage changes, and when the thresholds
         // change in Preferences — so the color updates without a poll.
-        store.objectWillChange
+        store.stateDidChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in
                 self?.updateTitle()
@@ -155,7 +183,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // loop in `.eventTracking`, and `Timer.scheduledTimer` would only add
         // to `.default`, so the timer would never fire while the menu is open.
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateStatusRowInPlace() }
+            guard let self else { return }
+            Task { @MainActor in self.updateStatusRowInPlace() }
         }
         RunLoop.main.add(t, forMode: .common)
         openMenuTimer = t
@@ -211,7 +240,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func usageSummaryItem() -> NSMenuItem {
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        item.view = UsageSummaryCardView(summary: usageSummaryStore.refresh())
+        item.view = UsageSummaryCardView(summary: cachedUsageSummary)
         item.isEnabled = false
         return item
     }

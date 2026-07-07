@@ -179,6 +179,14 @@ enum BridgeInstaller {
         } catch {
             throw BridgeInstallerError.writeFailed(String(describing: error))
         }
+
+        // Not our file — Claude Code can write settings.json concurrently, and
+        // a read-modify-write race could silently drop our change (or theirs).
+        // We can't lock it, but we can at least detect and log the loss instead
+        // of reporting success while the statusLine key is unexpectedly absent.
+        if !isSettingsConfigured {
+            Log.warn("configureSettings: statusLine not present after write — possible concurrent edit to settings.json")
+        }
     }
 
     // MARK: - Self-test
@@ -190,21 +198,18 @@ enum BridgeInstaller {
     private static let canaryWeekly = 31.7
     private static let canaryResetsAt = 1_700_000_000
 
-    /// Runs the installed bridge with a canary stdin payload and verifies
-    /// state.json reflects it. Restores any pre-existing state.json afterwards
-    /// so the user doesn't see fake numbers in the menu bar.
+    /// Runs the installed bridge with a canary stdin payload against a
+    /// throwaway `CCU_STATE_DIR`, and verifies the resulting state.json
+    /// reflects it. Never touches the live state.json, so there's no
+    /// save/restore step and no race with `StateFileWatcher` — the app's
+    /// last-write-wins ingest never sees the canary at all.
     static func runSelfTest() -> SelfTestResult {
         guard isScriptInstalled else { return .notInstalled }
         guard isJQAvailable else { return .jqMissing }
 
-        let stateFile = AppPaths.stateFile
-        let statusFile = AppPaths.bridgeStatusFile
-        let priorState = try? Data(contentsOf: stateFile)
-        let priorStatus = try? Data(contentsOf: statusFile)
-        defer {
-            restore(priorState, to: stateFile)
-            restore(priorStatus, to: statusFile)
-        }
+        let scratchDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ccu-selftest-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: scratchDir) }
 
         let payload = """
         {"rate_limits":{\
@@ -216,6 +221,9 @@ enum BridgeInstaller {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [installedScript.path]
+        var env = ProcessInfo.processInfo.environment
+        env["CCU_STATE_DIR"] = scratchDir.path
+        process.environment = env
         let stdinPipe = Pipe()
         let stderrPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -238,7 +246,8 @@ enum BridgeInstaller {
             return .scriptFailed(exitCode: process.terminationStatus, stderr: err)
         }
 
-        guard let data = try? Data(contentsOf: stateFile),
+        let scratchStateFile = scratchDir.appendingPathComponent("state.json")
+        guard let data = try? Data(contentsOf: scratchStateFile),
               let state = try? JSONDecoder().decode(State.self, from: data) else {
             return .stateNotWritten
         }
@@ -249,24 +258,6 @@ enum BridgeInstaller {
                 "expected session≈\(canarySession) weekly≈\(canaryWeekly), got session=\(gotSession) weekly=\(gotWeekly)")
         }
         return .passed
-    }
-
-    private static func restore(_ priorContents: Data?, to dest: URL) {
-        if let priorContents {
-            // Best-effort: same atomic-rename pattern as everywhere else.
-            let tmp = dest.deletingLastPathComponent()
-                .appendingPathComponent(".\(dest.lastPathComponent).ccu.restore.\(ProcessInfo.processInfo.processIdentifier)")
-            do {
-                try priorContents.write(to: tmp, options: .atomic)
-                if rename(tmp.path, dest.path) != 0 {
-                    try? FileManager.default.removeItem(at: tmp)
-                }
-            } catch {
-                try? FileManager.default.removeItem(at: tmp)
-            }
-        } else {
-            try? FileManager.default.removeItem(at: dest)
-        }
     }
 
     // MARK: - Internals
