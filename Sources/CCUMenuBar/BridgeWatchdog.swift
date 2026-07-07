@@ -17,8 +17,9 @@ final class BridgeWatchdog {
     /// to absorb slow CC starts and "I just launched the app to look at it."
     private let firstHeartbeatGrace: TimeInterval = 5 * 60
     /// "Bridge stopped reporting" threshold. Tight enough to catch a
-    /// same-session regression, loose enough that "I closed CC for lunch"
-    /// doesn't fire.
+    /// same-session regression. The `isClaudeCodeRunning()` gate in
+    /// `currentCondition` is what actually keeps "closed CC for lunch" from
+    /// firing — this threshold alone wouldn't be, since lunch often runs long.
     private let heartbeatTimeout: TimeInterval = 30 * 60
     /// How often we re-evaluate. Doesn't need to be precise — a 60s grain is
     /// fine against 5m and 30m thresholds.
@@ -74,7 +75,20 @@ final class BridgeWatchdog {
             return
         }
 
-        let condition = currentCondition()
+        // The liveness check spawns `pgrep` and waits for it — keep that off
+        // the main thread, same discipline as the bridge self-test's `Process`
+        // use, even though it's normally a few ms.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let running = self.isClaudeCodeRunning()
+            Task { @MainActor [weak self] in
+                self?.evaluate(claudeCodeRunning: running)
+            }
+        }
+    }
+
+    private func evaluate(claudeCodeRunning: Bool) {
+        let condition = currentCondition(claudeCodeRunning: claudeCodeRunning)
 
         if condition == nil {
             if loggedCondition != nil {
@@ -115,7 +129,13 @@ final class BridgeWatchdog {
         post(cond)
     }
 
-    private func currentCondition() -> Condition? {
+    private func currentCondition(claudeCodeRunning: Bool) -> Condition? {
+        // A stale/missing heartbeat is expected whenever Claude Code simply
+        // isn't running (closed for lunch, end of day, etc.) — that's not a
+        // regression worth a notification. Only treat it as a real problem
+        // when Claude Code is actually alive but the bridge isn't reporting.
+        guard claudeCodeRunning else { return nil }
+
         let bridge = BridgeStatus.read()
         if bridge == nil {
             return Date().timeIntervalSince(bootDate) > firstHeartbeatGrace
@@ -126,6 +146,26 @@ final class BridgeWatchdog {
             return .stoppedReporting
         }
         return nil
+    }
+
+    /// Best-effort check for a running `claude` CLI process. Fails open (treats
+    /// Claude Code as running) if `pgrep` itself can't be launched, so a broken
+    /// environment can't permanently silence a genuine regression. `nonisolated`
+    /// so `tick()` can call it from a background queue without hopping actors
+    /// just to spawn and wait on a process.
+    private nonisolated func isClaudeCodeRunning() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        process.arguments = ["-x", "claude"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return true
+        }
     }
 
     private func post(_ condition: Condition) {
