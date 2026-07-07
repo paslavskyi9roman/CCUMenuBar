@@ -34,7 +34,12 @@ VS Code: `.vscode/launch.json` has "Debug CCUMenuBar" / "Release CCUMenuBar" con
   `Co-Authored-By` trailers. Write them as a human author would.
 - Author *and* commit as the repository user
   (`Roman Paslavskyi <46484914+paslavskyi9roman@users.noreply.github.com>`),
-  never as `Claude`.
+  never as `Claude`. This environment's default git config sets
+  `user.name`/`user.email` to `Claude <noreply@anthropic.com>` — passing
+  `git commit --author=...` alone only overrides the Author field, and
+  GitHub can still render the commit using the Committer field. Set the
+  **repo-local** git config before committing:
+  `git config user.name "Roman Paslavskyi" && git config user.email "46484914+paslavskyi9roman@users.noreply.github.com"`.
 
 ## Architecture
 
