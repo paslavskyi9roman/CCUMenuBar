@@ -173,25 +173,38 @@ and integration examples.
 
 ## How it works
 
-A single shell script — the **statusline bridge** — is the data source.
-Claude Code calls it on each statusline tick, the bridge extracts
-`rate_limits` from the session JSON, transforms it with `jq`, and writes:
+Two producers feed a single `state.json` the app watches:
+
+- **Statusline bridge** (`~/.claude/scripts/ccu-statusline-bridge.sh`) —
+  Claude Code calls it on each statusline tick. It extracts `rate_limits`
+  from the session JSON and writes `state.json` with `"source": "statusline"`.
+  Fast and free, but it only sees one Claude Code session's cached headers
+  at a time — with several terminals open the bridge alone would flicker
+  between snapshots.
+- **OAuth poller** (inside the app) — every 60s GETs the undocumented
+  `https://api.anthropic.com/api/oauth/usage` endpoint, using the OAuth
+  token from `~/.claude/.credentials.json` if present, and writes
+  `state.json` with `"source": "oauth"`. Authoritative tie-breaker.
+
+The bridge defers to a fresh oauth-sourced `state.json` (younger than
+120s) and skips its write in that case, so the poller wins when both
+producers are healthy. Without credentials the poller idles cleanly and
+the bridge runs solo. Both producers write via `rename(2)`; no partial
+reads.
 
 ```
 ~/Library/Application Support/ClaudeCodeUsage/state.json          # rate_limits
 ~/Library/Application Support/ClaudeCodeUsage/bridge-status.json  # heartbeat
 ```
 
-The app watches `state.json` with kqueue and renders. `bridge-status.json`
-is a sibling file the bridge updates on **every** invocation — even when
-`rate_limits` is null — so the app can tell apart "Claude Code never
-called the bridge" from "called it, but no `rate_limits` in the payload
-yet." Both files are written via `rename(2)` for atomicity; no partial
-reads.
+`bridge-status.json` is a sibling file the bridge updates on **every**
+invocation — even when `rate_limits` is null — so the app can tell apart
+"Claude Code never called the bridge" from "called it, but no
+`rate_limits` in the payload yet."
 
-The bridge only fires while Claude Code is running, so the menu bar
-freezes at the last known values when you close it. A "stale" indicator
-appears after 5 minutes.
+The bridge only fires while Claude Code is running. With the OAuth poller
+inactive (no credentials), the menu bar freezes at the last known values
+when you close Claude Code. A "stale" indicator appears after 5 minutes.
 
 Diagnostic logs:
 

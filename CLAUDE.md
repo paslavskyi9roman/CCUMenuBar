@@ -54,11 +54,27 @@ app*, as a Claude Code statusline command. It extracts `.rate_limits` from the s
 Claude Code pipes to it, transforms it with `jq`, and atomic-writes `state.json`. It ships as a
 SwiftPM bundle resource; the in-app Setup flow (`BridgeInstaller` / `SetupWindow`) installs it to
 `~/.claude/scripts/` and wires up `settings.json`. Only updates while Claude Code is running.
-`STATE_DIR` can be overridden with `CCU_STATE_DIR` — the app's Setup self-test uses this to run
-the bridge against a throwaway directory instead of the live `state.json`.
 
-An earlier version also had an in-app OAuth poller (Producer B) that hit an undocumented
-`/api/oauth/usage` endpoint. It was removed — the statusline bridge is the sole producer now.
+The bridge sees only one Claude Code session's cached `rate_limits` per tick — with several
+terminals open it would otherwise overwrite `state.json` with whichever session ticked last, so
+the bridge **defers to a fresh OAuth-sourced `state.json`** (source=`oauth`, younger than 120s)
+and skips its write in that case, logging `deferred state write to oauth(age=…)` to `bridge.log`.
+
+**Producer B — `OAuthPoller.swift`** runs *inside this app*. Every 60s it pulls every OAuth
+access token it can find — first the legacy `~/.claude/.credentials.json` file, then every
+`Claude Code-credentials-*` generic-password item from the login keychain (see
+`KeychainCredentials.swift`) — and tries each in turn against the **undocumented**
+`https://api.anthropic.com/api/oauth/usage` endpoint. The first 2xx response is parsed
+defensively and written to `state.json` via `StateStore.writeAndStore` (source=`oauth`).
+401/403 from a token means try the next; running out of tokens triggers a 5-minute back-off.
+When *no* credentials are reachable (no file, no keychain entries) the poller idles cleanly and
+Producer A continues to drive the UI. When credentials exist, Producer B is the
+**authoritative tie-breaker** in multi-terminal setups because it polls the server directly
+rather than reading any one Claude Code session's cached headers.
+
+Keychain caveat: the bundle is ad-hoc signed by `scripts/make-app.sh`, so macOS prompts the
+user the first time the app touches each Keychain item. Always-Allow makes the prompt
+permanent — until the next rebuild changes the signature.
 
 **Consumer — the app:** `StateFileWatcher` → `StateStore` → `MenuBarController`.
 

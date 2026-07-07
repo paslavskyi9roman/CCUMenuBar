@@ -37,8 +37,13 @@ final class RefreshMenuItemView: NSView {
     /// even though `readNow()` returns in single-digit ms.
     private static let minimumLoadingDuration: TimeInterval = 0.7
 
+    /// Matches the row height NSMenu uses for system items rendered with
+    /// `menuFont(ofSize: 0)`. A shorter view rides high, a taller one
+    /// pushes following separators down — both visible against neighbors.
+    private static let rowHeight: CGFloat = 24
+
     init() {
-        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: 22))
+        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: Self.rowHeight))
         wantsLayer = true
         autoresizingMask = [.width]
         setupSubviews()
@@ -69,7 +74,10 @@ final class RefreshMenuItemView: NSView {
             highlight.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -5),
             highlight.topAnchor.constraint(equalTo: topAnchor, constant: 1),
             highlight.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            // Match the text x-origin of system NSMenuItem rows. NSTextField
+            // adds a small internal bezel inset, so the visual glyph edge
+            // lands a touch past the constraint constant.
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
             spinner.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 6),
             spinner.centerYAnchor.constraint(equalTo: centerYAnchor),

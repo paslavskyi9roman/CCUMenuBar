@@ -12,6 +12,11 @@ enum AppPaths {
     static let claudeSettingsFile = claudeDirectory
         .appendingPathComponent("settings.json")
 
+    /// Legacy plaintext OAuth credentials. Modern Claude Code stores them
+    /// in the Keychain instead; the poller falls back to either.
+    static let claudeCredentialsFile = claudeDirectory
+        .appendingPathComponent(".credentials.json")
+
     static let stateDirectory = homeDirectory
         .appendingPathComponent("Library", isDirectory: true)
         .appendingPathComponent("Application Support", isDirectory: true)

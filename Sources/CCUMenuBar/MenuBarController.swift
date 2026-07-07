@@ -384,7 +384,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .ok:
             let ago = store.state?.updatedAtDate.map { Formatters.ago(since: $0) } ?? "—"
             let stale = (store.state?.isStale ?? false) ? "  (stale)" : ""
-            return "Updated \(ago)\(stale)"
+            let source = store.state.map { " · via \($0.source)" } ?? ""
+            return "Updated \(ago)\(stale)\(source)"
         }
     }
 

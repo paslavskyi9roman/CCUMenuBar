@@ -60,6 +60,24 @@ fi
 INPUT="$(cat)"
 NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# Prints "oauth(age=Ns)" when the existing state.json is OAuth-sourced and
+# young enough to keep. The poller is account-authoritative; the bridge
+# only sees one Claude Code session's cached rate_limits per tick, so
+# without this guard a stale tick from a backgrounded terminal would
+# clobber the truth. 120 s ≈ 2× the poller's 60 s cadence.
+defer_to_oauth_reason() {
+  [[ -f "${STATE_FILE}" ]] || return
+  local src updated existing_unix age
+  src="$("${JQ}" -r '.source // empty' "${STATE_FILE}" 2>/dev/null || true)"
+  [[ "${src}" == "oauth" ]] || return
+  updated="$("${JQ}" -r '.updated_at // empty' "${STATE_FILE}" 2>/dev/null || true)"
+  [[ -n "${updated}" ]] || return
+  existing_unix="$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "${updated}" "+%s" 2>/dev/null || echo 0)"
+  (( existing_unix > 0 )) || return
+  age=$(( $(date -u +%s) - existing_unix ))
+  (( age >= 0 && age < 120 )) && printf 'oauth(age=%ds)' "${age}"
+}
+
 write_bridge_status() {
   local rate_limits_present="$1"
   if [[ -n "${JQ}" ]]; then
@@ -127,7 +145,12 @@ else
       }' 2>/dev/null)"
 
     if [[ -n "${NEW_STATE}" ]]; then
-      printf '%s\n' "${NEW_STATE}" > "${STATE_TMP}" && mv -f "${STATE_TMP}" "${STATE_FILE}"
+      DEFER_REASON="$(defer_to_oauth_reason)"
+      if [[ -n "${DEFER_REASON}" ]]; then
+        echo "[${NOW_ISO}] deferred state write to ${DEFER_REASON}" >> "${LOG_FILE}"
+      else
+        printf '%s\n' "${NEW_STATE}" > "${STATE_TMP}" && mv -f "${STATE_TMP}" "${STATE_FILE}"
+      fi
       RATE_LIMITS_PRESENT=true
     else
       echo "[${NOW_ISO}] jq transform failed; raw rate_limits=${RATE_LIMITS}" >> "${LOG_FILE}"

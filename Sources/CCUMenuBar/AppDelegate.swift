@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: StateStore!
     private var settings: Settings!
     private var watcher: StateFileWatcher!
+    private var poller: OAuthPoller!
     private var menuBar: MenuBarController!
     private var setupWindow: SetupWindowController!
     private var preferencesWindow: PreferencesWindowController!
@@ -23,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings = Settings()
         menuBar = MenuBarController(store: store, settings: settings)
         watcher = StateFileWatcher(store: store)
+        poller = OAuthPoller(store: store)
         setupWindow = SetupWindowController(store: store)
         preferencesWindow = PreferencesWindowController(settings: settings)
         notifications = NotificationManager(store: store, settings: settings)
@@ -31,10 +33,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar.onOpenSetup = { [weak self] in self?.setupWindow.show() }
         menuBar.onOpenPreferences = { [weak self] in self?.preferencesWindow.show() }
         menuBar.onRefresh = { [weak self] in
-            self?.watcher.refreshNow()
+            guard let self else { return }
+            self.watcher.refreshNow()
+            if self.poller.canRefresh {
+                self.poller.refreshNow()
+            } else {
+                Log.info("manual reload requested; oauth credentials unavailable")
+            }
         }
 
         watcher.start()
+        poller.start()
         notifications.start()
         watchdog.start()
 
@@ -86,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        poller?.stop()
         watcher?.stop()
         watchdog?.stop()
         Log.flush()

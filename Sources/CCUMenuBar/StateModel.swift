@@ -101,6 +101,19 @@ struct State: Codable, Equatable {
     static func nowISO() -> String {
         iso8601.string(from: Date())
     }
+
+    /// Stable content hash used to drop the kqueue echo of our own write:
+    /// `StateStore.writeAndStore` records the fingerprint of what it wrote, and
+    /// `ingest(fromWatcher:)` skips any watcher event whose decoded state
+    /// fingerprints identically. Derived from the same deterministic
+    /// (`.sortedKeys`) JSON encoding `atomicWrite` uses, so it survives the
+    /// write→read round-trip through `state.json` byte-for-byte.
+    func fingerprint() -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(self) else { return updatedAt }
+        return String(decoding: data, as: UTF8.self)
+    }
 }
 
 /// Mirrors `bridge-status.json`. The bridge writes this on every invocation;

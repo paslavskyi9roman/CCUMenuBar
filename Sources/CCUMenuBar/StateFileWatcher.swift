@@ -117,7 +117,7 @@ final class StateFileWatcher {
             return
         }
         Task { @MainActor [weak store] in
-            store?.ingest(state)
+            store?.ingest(state, fromWatcher: true)
         }
     }
 }
